@@ -183,8 +183,50 @@ estFixture.months[0].artists[0][1] = 40;
 assert.equal(C.build(estFixture).M[0].data.albums[0].val, 40, 'capped at the artist’s minutes');
 assert.equal(C.build({ ...estFixture, lengths: undefined }).M[0].data.albums[0].title, 'Rival', 'off without lengths');
 
-const original = C.build({ ...window.MUSICBOX, releases: {} });
-const beforeRecovery = C.build({ ...window.MUSICBOX, releases: {}, collectionListening: {} });
+// Credit cleanup joins tagged, untagged and already combined imports without losing links.
+const creditFixture = {
+  months: [{ month: '2024-01', source: 'apple', artists: [['Lead', 100]],
+    albums: [['Album', 'Lead', 1]], songs: [['Hit (feat. Guest)', 'Lead', 4], ['Hit', 'Lead & Guest', 3]] }],
+  tracks: { 'Album — Lead': ['Hit'] }, lengths: { 'Hit (feat. Guest) — Lead': 180 },
+  images: [['song', 'Hit', 'Lead', 'cover.jpg']],
+  replay: { 2024: { songs: [['Hit', 'Lead', 20]] } }
+};
+const credited = C.build(creditFixture), hitKey = 'hit|leadguest';
+assert.deepEqual(credited.M[0].data.songs.map(e => [e.title, e.artist, e.val]), [['Hit', 'Lead & Guest', 7]]);
+assert.equal(credited.T.songs.get(hitKey).total, 20, 'Replay and monthly variants share one identity');
+assert.equal(credited.T.albums.get('album|lead').total, 21, 'Normalized song references retain their recorded duration');
+assert.equal(credited.H.songs.get(hitKey).album.key, 'album|lead');
+assert.equal(credited.songRedirects.get('hit|lead'), hitKey, 'Old song URLs still work');
+assert.equal(credited.artists.get('guest').songs[0].key, hitKey);
+assert.ok(!credited.T.artists.has('guest'), 'Guest credits do not invent artist listening minutes');
+const names = C.catalog({});
+assert.deepEqual(names.rename('songs', 'Song (with Guest) [feat. Other] (Live)', 'Lead'), ['Song (Live)', 'Lead, Guest & Other']);
+assert.deepEqual(names.rename('songs', 'Song (feat. Kim Petras and Jay Park)', 'Lead'), ['Song', 'Lead, Kim Petras & Jay Park']);
+assert.deepEqual(names.rename('songs', 'Song (feat. Elvira, Mistress of the Dark)', 'Lead'), ['Song', 'Lead & Elvira, Mistress of the Dark']);
+assert.deepEqual(names.splitCredits('Lead & Elvira, Mistress of the Dark'), ['Lead', 'Elvira, Mistress of the Dark']);
+assert.deepEqual(names.rename('songs', 'Song featuring Guest', 'Lead'), ['Song', 'Lead & Guest']);
+assert.deepEqual(names.rename('songs', 'Song (feat. Guest)', 'Lead & Guest'), ['Song', 'Lead & Guest']);
+assert.deepEqual(names.rename('songs', 'Song', 'Fitz and The Tantrums'), ['Song', 'Fitz and The Tantrums']);
+assert.deepEqual(names.rename('songs', 'Floating Free (Beauty & the Beat featuring Nuke Remix)', 'Vibrasphere'),
+  ['Floating Free (Beauty & the Beat featuring Nuke Remix)', 'Vibrasphere'], 'Keep remix descriptions intact');
+
+const exclusionFixture = {
+  releases: { excludeArtists: ['Hidden Artist'], excludeSongs: ['Hidden Song — Kept Artist'], excludeAlbums: ['Hidden Song — Kept Artist'] },
+  months: [{ month: '2024-01', source: 'apple', artists: [['Hidden Artist', 100], ['Kept Artist', 50]],
+    albums: [['Hidden Album', 'Hidden Artist', 100], ['Hidden Song', 'Kept Artist', 30], ['Kept Album', 'Kept Artist', 20]],
+    songs: [['Hidden Song', 'Kept Artist', 30], ['Other Song', 'Hidden Artist', 20], ['Kept Song', 'Kept Artist', 10]] }],
+  replay: { 2024: { artists: [['Hidden Artist', 100]], albums: [['Hidden Album', 'Hidden Artist', 100]], songs: [['Hidden Song', 'Kept Artist', 30]] } }
+};
+const excluded = C.build(exclusionFixture);
+assert.deepEqual(excluded.M[0].data.songs.map(e => [e.title, e.rank]), [['Kept Song', 1]]);
+assert.deepEqual(excluded.M[0].data.albums.map(e => [e.title, e.rank]), [['Kept Album', 1]]);
+assert.deepEqual(excluded.M[0].data.artists.map(e => [e.title, e.rank]), [['Kept Artist', 1]]);
+assert.ok(!excluded.artists.has('hiddenartist'));
+for (const cat of C.CATS) assert.equal(excluded.replay[2024][cat].length, 0);
+
+const withoutGroups = { ...window.MUSICBOX.releases, groups: [] };
+const original = C.build({ ...window.MUSICBOX, releases: withoutGroups });
+const beforeRecovery = C.build({ ...window.MUSICBOX, releases: withoutGroups, collectionListening: {} });
 for (const cat of ['songs', 'artists']) {
   const history = db => db.M.map(m => m.data[cat].map(e => [e.key, e.val, e.rank, e.peak, e.months]));
   const totals = db => [...db.T[cat].values()].map(t => [t.key, t.total]);

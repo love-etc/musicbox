@@ -1,5 +1,7 @@
 {
-  "_comment": "Group standalone releases into albums before ranking. Titles in a group belong to its artist. Exclusions affect albums only; song and artist listening stays intact.",
+  "_comment": "Group standalone releases before ranking. Album exclusions preserve songs and artists; artist exclusions omit all of that artist's entries; song exclusions omit only the named songs.",
+  "excludeArtists": ["Anna Blue", "WESTSIDE BOOGIE", "Rao"],
+  "excludeSongs": ["Massive Attack — Nicki Minaj"],
   "excludeAlbums": [
     "Angst — Loredana",
     "everything i wanted — Billie Eilish",
@@ -7,9 +9,27 @@
     "Hot Girl Summer (feat. Nicki Minaj & Ty Dolla $ign) — Megan Thee Stallion",
     "Tubes chansons française — Mylène Farmer",
     "À quoi je sers — Mylène Farmer",
-    "Plus grandir (Best Of 1986 / 1996) — Mylène Farmer"
+    "Plus grandir (Best Of 1986 / 1996) — Mylène Farmer",
+    "Massive Attack — Nicki Minaj",
+    "Loose Wrists — Cazwell"
   ],
   "groups": [
+    {
+      "title": "WHEN WE ALL FALL ASLEEP, WHERE DO WE GO?",
+      "artist": "Billie Eilish",
+      "releases": ["bury a friend"]
+    },
+    {
+      "title": "Slayyyter",
+      "artist": "Slayyyter",
+      "kind": "Mixtape",
+      "releases": ["Mine", "BFF"]
+    },
+    {
+      "title": "MEDUSA",
+      "artist": "Loredana",
+      "releases": ["Näher zu mir", "Naeher Zu Mir", "Geht schon"]
+    },
     {
       "title": "Head Above Water",
       "artist": "Avril Lavigne",

@@ -41,7 +41,7 @@ export function reconstructCollections(groups, covered, streams) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const sourceDir = resolve(ROOT, process.argv[2] || 'spotify data');
-  const groups = JSON.parse(readFileSync(join(ROOT, 'data/releases.json'), 'utf8')).groups.filter(g => g.kind);
+  const groups = JSON.parse(readFileSync(join(ROOT, 'data/releases.json'), 'utf8')).groups.filter(g => g.kind === 'Singles collection');
   const covered = new Set(readdirSync(join(ROOT, 'data/spotify')).filter(f => /^\d{4}-\d{2}\.json$/.test(f)).map(f => f.slice(0, 7)));
   const files = findFiles(sourceDir, /^Streaming_History_Audio_.*\.json$/);
   if (!files.length) throw new Error('No Spotify extended-history files found. Existing reconstruction left untouched.');

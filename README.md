@@ -34,6 +34,7 @@ data/
   replay/YYYY.json      Apple Music Replay's full-year lists
   images.json           [type, title, artist, imageUrl] rows for artwork
   aliases.json          renames so histories join up (optional)
+  credits.json          verified guest credits missing from imports
   tracks.json           which charted songs are on which charted album
   lengths.json          song lengths in seconds (album minutes from songs, below)
   releases.json         singles grouped into albums, and album exclusions
@@ -201,7 +202,7 @@ total. Existing single-album page links redirect to the group. Song charts and
 artist listening are unaffected. `tracks.json` still controls which songs appear
 on an album’s page; collections use their own artwork when available, with a
 mosaic of their single artwork as a fallback.
-Explicit singles collections with known listening also get a library entry and
+Explicit collections and mixtapes with known listening also get a library entry and
 detail page if they never charted, with zero chart appearances and no award ranks.
 They follow the same library size limit as other albums.
 
@@ -211,6 +212,25 @@ They follow the same library size limit as other albums.
 from album lists, including monthly, year-end,
 all-time, library and awards views. Song entries and artist minutes remain. Raw month files are kept
 intact; add or change rules here and rebuild to apply them.
+
+`excludeArtists` removes the named artists and their songs/albums from every
+chart and library view. `excludeSongs` removes specific `"Title — Artist"` song
+entries; use a matching album exclusion to hide the single release too. These
+rules also apply to Replay lists and album estimates. Source exports stay intact.
+
+### Song credits
+
+Song titles keep their mix/live descriptions, while `(feat. ...)`, `[feat. ...]`,
+`(with ...)`, `(avec ...)` and trailing `featuring ...` credits move to the artist
+line. Tagged and untagged imports with the same song and lead artist share one
+history, including their Replay totals, album links, artwork and old page URLs.
+Guest credits link to the guest's artist page without inventing artist minutes.
+
+`data/credits.json` supplies complete artist lists for verified missing credits,
+with a source URL for each correction. Existing titles already containing guest
+credits are handled automatically. Band names containing `and`, `&` or commas
+stay intact; remix descriptions such as `Beauty & the Beat featuring Nuke Remix`
+remain part of the title.
 
 ### Reconstructing collection history
 

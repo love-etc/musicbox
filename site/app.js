@@ -50,6 +50,7 @@
   // ---- Images: data/images.json rows of [type, title, artist, url] ----
   const IMG = new Map();
   (DB.images || []).forEach(([type, title, artist, url]) => {
+    if (type === 'song') [title, artist] = X.rename('songs', title, artist);
     if (url) IMG.set(type + '|' + C.norm(title) + (type === 'artist' ? '' : '|' + C.norm(artist)), url);
   });
   const imgFor = (cat, key) => {
@@ -81,7 +82,7 @@
     if (a === 'awards') { state = { ...state, view: 'awards', cat: CATS.includes(b) ? b : 'songs', key: null }; return; }
     if (a === 'album' || a === 'artist' || a === 'song') {
       const key = parts.slice(1).join('/');
-      state = { ...state, view: a, key: a === 'album' ? X.albumRedirects.get(key) || key : key }; return;
+      state = { ...state, view: a, key: (a === 'album' ? X.albumRedirects.get(key) : a === 'song' ? X.songRedirects.get(key) : null) || key }; return;
     }
     if (a === 'all-time') { state = { year: 'all', view: 'all-time', cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
     if (/^\d{4}-\d{2}$/.test(a) && byMonth.has(a)) { state = { year: +a.slice(0, 4), view: a, cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
@@ -124,7 +125,10 @@
     const collection = cat === 'albums' && X.collections.get(h.key);
     const url = imgFor(cat, h.key);
     if (collection && !url) {
-      const covers = [...new Set(collection.releases.map(title => imgFor('songs', C.norm(title) + '|' + C.norm(collection.artist))).filter(Boolean))].slice(0, 4);
+      const covers = [...new Set(collection.releases.map(title => {
+        const key = C.norm(title) + '|' + C.norm(collection.artist);
+        return imgFor('songs', X.songRedirects.get(key) || key);
+      }).filter(Boolean))].slice(0, 4);
       if (covers.length === 4) return `<div class="art mosaic ${cls}" aria-hidden="true">${covers.map(url => `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`).join('')}</div>`;
     }
     return tile(cat === 'artists' ? h.title : h.artist, h.title, cat === 'artists', url, cls);

@@ -39,17 +39,73 @@
     return best;
   }
 
-  function build(DB) {
+  // Keep song identity, guest credits, artwork and track-list references consistent.
+  function catalog(DB) {
     const alias = DB.aliases || {};
-    const artistName = a => (alias.artists && alias.artists[a]) || a;
-    // songs/albums aliases: "Old title — Old artist" (or just "Old title") -> "New title" or "New title — New artist"
-    const rename = (cat, t, a) => {
-      const map = alias[cat]; if (!map) return [t, a];
-      const v = map[t + ' — ' + a] || map[t];
-      if (!v) return [t, a];
-      const i = v.lastIndexOf(' — ');
-      return i < 0 ? [v, a] : [v.slice(0, i), v.slice(i + 3)];
+    const artistName = a => alias.artists?.[a] || a;
+    const protectedNames = [...new Set(['Elvira, Mistress of the Dark', 'Tyler, The Creator', 'Earth, Wind & Fire',
+      'Years & Years', 'Aly & AJ', 'Christine and the Queens', 'Marina and The Diamonds',
+      'Simon & Garfunkel', 'Joan Jett & The Blackhearts', 'Huey Lewis & The News',
+      'Selena Gomez & The Scene', 'Jorge & Mateus', 'Dimitri Vegas & Like Mike', 'Wisin & Yandel',
+      'Fitz and The Tantrums', 'Francis and the Lights',
+      ...Object.values(DB.credits?.songs || {}).flatMap(rule => rule.artists)])].sort((a, b) => b.length - a.length);
+    const splitCredits = artist => {
+      let text = String(artist);
+      protectedNames.forEach((name, i) => { text = text.replaceAll(name, `\u0001${i}\u0001`); });
+      return unique(text.split(/\s*(?:,|&|\band\b|\bfeaturing\b|\bfeat\.?|\bft\.| x )\s*/i)
+        .map(n => n.replace(/\u0001(\d+)\u0001/g, (_, i) => protectedNames[+i]).trim()).filter(Boolean));
     };
+    const unique = names => [...new Map(names.map(n => [norm(artistName(n)), artistName(n)])).values()];
+    const format = names => names.length < 3 ? names.join(' & ') : names.slice(0, -1).join(', ') + ' & ' + names.at(-1);
+    const parse = (title, artist) => {
+      const guests = [];
+      title = title.replace(/\s*[([](?:feat\.?|ft\.?|featuring|with|avec)\s+([^\])]+)[)\]]/gi,
+        (_, credit) => { guests.push(...splitCredits(credit.replace(/\b(?:feat\.?|ft\.?|featuring|with|avec)\s+/gi, ''))); return ''; });
+      title = title.replace(/\s+(?:feat\.?|ft\.?|featuring)\s+(.+)$/i,
+        (match, credit) => { if (match.includes(')')) return match; guests.push(...splitCredits(credit)); return ''; }).trim();
+      return { title, names: unique([...splitCredits(artist), ...guests]) };
+    };
+    const aliasMaps = Object.fromEntries(['songs', 'albums'].map(cat => [cat,
+      new Map(Object.entries(alias[cat] || {}).map(([from, to]) => [norm(from), to]))]));
+    const aliased = (cat, title, artist) => {
+      artist = artistName(artist);
+      const value = aliasMaps[cat]?.get(norm(title + ' — ' + artist)) || aliasMaps[cat]?.get(norm(title));
+      if (!value) return [title, artist];
+      const i = value.lastIndexOf(' — ');
+      return i < 0 ? [value, artist] : [value.slice(0, i), value.slice(i + 3)];
+    };
+    const family = (title, names) => norm(title) + '|' + norm(names[0]);
+    const credits = new Map(), overrides = new Map(), songRedirects = new Map();
+    const pairs = [...(DB.months || []).flatMap(m => m.songs || []), ...Object.values(DB.replay || {}).flatMap(m => m.songs || [])];
+    (DB.images || []).forEach(([type, title, artist]) => { if (type === 'song') pairs.push([title, artist]); });
+    Object.entries(DB.tracks || {}).forEach(([album, songs]) => {
+      if (album.startsWith('_')) return;
+      songs.forEach(s => { const i = s.lastIndexOf(' — '); pairs.push(i < 0 ? [s, album.slice(album.lastIndexOf(' — ') + 3)] : [s.slice(0, i), s.slice(i + 3)]); });
+    });
+    pairs.forEach(([title, artist]) => {
+      const parsed = parse(...aliased('songs', title, artist));
+      const key = family(parsed.title, parsed.names);
+      credits.set(key, unique([...(credits.get(key) || []), ...parsed.names]));
+    });
+    Object.entries(DB.credits?.songs || {}).forEach(([song, rule]) => {
+      const i = song.lastIndexOf(' — '), parsed = parse(...aliased('songs', song.slice(0, i), song.slice(i + 3)));
+      overrides.set(family(parsed.title, parsed.names), rule.artists.map(artistName));
+    });
+    const rename = (cat, title, artist) => {
+      [title, artist] = aliased(cat, title, artist);
+      if (cat !== 'songs') return [title, artist];
+      const parsed = parse(title, artist), key = family(parsed.title, parsed.names);
+      return [parsed.title, format(overrides.get(key) || credits.get(key) || parsed.names)];
+    };
+    pairs.forEach(([title, artist]) => {
+      const [t, a] = rename('songs', title, artist);
+      songRedirects.set(norm(title) + '|' + norm(artist), norm(t) + '|' + norm(a));
+    });
+    return { artistName, rename, splitCredits, songRedirects };
+  }
+
+  function build(DB) {
+    const { artistName, rename, splitCredits, songRedirects } = catalog(DB);
     const releaseKey = (title, artist) => norm(title) + '|' + norm(artist);
     const albumGroups = new Map(), albumRedirects = new Map(), collections = new Map();
     (DB.releases?.groups || []).forEach(group => {
@@ -68,14 +124,22 @@
       const [t, a] = rename('albums', name.slice(0, i), artistName(name.slice(i + 3)));
       return releaseKey(t, a);
     }));
+    const excludedArtists = new Set((DB.releases?.excludeArtists || []).map(a => norm(artistName(a))));
+    const excludedSongs = new Set((DB.releases?.excludeSongs || []).map(name => {
+      const i = name.lastIndexOf(' — ');
+      return releaseKey(...rename('songs', name.slice(0, i), name.slice(i + 3)));
+    }));
     function entry(cat, row) {
       if (cat === 'artists') {
         const title = artistName(row[0]);
+        if (splitCredits(title).some(a => excludedArtists.has(norm(a)))) return null;
         return { title, artist: '', val: row[1], key: norm(title) };
       }
       const [title, artist] = rename(cat, row[0], artistName(row[1]));
       const key = releaseKey(title, artist);
+      if (splitCredits(artist).some(a => excludedArtists.has(norm(a)))) return null;
       if (cat === 'albums' && excludedAlbums.has(key)) return null;
+      if (cat === 'songs' && excludedSongs.has(key)) return null;
       return { title, artist, val: row[2], key, releaseKey: key,
         ...(cat === 'albums' ? albumGroups.get(key) : {}) };
     }
@@ -102,6 +166,10 @@
     // data/lengths.json (3:30 when unknown). Live albums and best-ofs only count their own
     // live versions. Needs data/lengths.json; set ESTIMATE_FROM to new Set([]) to switch it off.
     const ESTIMATE_FROM = DB.lengths ? new Set(['apple']) : new Set();
+    const lengths = new Map(Object.entries(DB.lengths || {}).filter(([s]) => !s.startsWith('_')).map(([s, sec]) => {
+      const i = s.lastIndexOf(' — ');
+      return [releaseKey(...rename('songs', s.slice(0, i), s.slice(i + 3))), sec];
+    }));
     const SONG_ALBUM = new Map();   // song key -> { album: [title, artist], sec }
     Object.entries(DB.tracks || {}).forEach(([ak, songs]) => {
       if (ak.startsWith('_')) return;
@@ -109,8 +177,8 @@
       songs.forEach(s => {
         const j = s.lastIndexOf(' — ');
         const [st, sa] = j < 0 ? rename('songs', s, artistName(albumArtist)) : rename('songs', s.slice(0, j), artistName(s.slice(j + 3)));
-        const sec = (DB.lengths || {})[j < 0 ? s + ' — ' + albumArtist : s] || 210;
         const k = norm(st) + '|' + norm(sa);
+        const sec = lengths.get(k) || 210;
         if (!SONG_ALBUM.has(k)) SONG_ALBUM.set(k, { album: [ak.slice(0, i), albumArtist], sec });
       });
     });
@@ -398,12 +466,6 @@
     });
 
     // ---- Artists: everyone credited on a charted song or album, or charted as an artist ----
-    const splitCredits = (artist, title = '') => {
-      const names = String(artist).split(/\s*(?:,|&| featuring | feat\. | x )\s*/i);
-      const feat = String(title).match(/\((?:feat\.|featuring|with|avec) ([^)]+)\)/i);
-      if (feat) names.push(...feat[1].split(/\s*(?:,|&)\s*/));
-      return [...new Set(names.map(n => artistName(n.trim())).filter(Boolean))];
-    };
     const A = new Map();
     const artistEntry = name => {
       const k = norm(name);
@@ -419,10 +481,10 @@
       a.total = a.h ? a.h.total : (T.artists.get(a.key) || {}).total || 0;
     });
 
-    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits, albumRedirects, collections, albumPages };
+    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits, albumRedirects, songRedirects, rename, collections, albumPages };
   }
 
-  const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, LIBRARY_LIMITS, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, longestRun, build };
+  const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, LIBRARY_LIMITS, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, longestRun, catalog, build };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Charts = api;
 })(typeof window !== "undefined" ? window : globalThis);
