@@ -444,6 +444,69 @@
                       : `<p class="hint">No songs from this album made the monthly top ${C.CHART_SIZE} (or they’re not matched yet: see data/tracks.json).</p>`)
       + (more.length ? `<h3 class="sec">More by ${esc(h.artist)}</h3><div class="cards">${more.map(a => cardHtml('albums', a)).join('')}</div>` : '');
   }
+  // ---- Artist achievements ----
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+  const firstAt = (h, maxRank) => h.ranks.findIndex(p => p && p.rank <= maxRank);
+  function entryAchievements(list, cat) {
+    if (!list.length) return '';
+    const word = ONE[cat], words = CATNAME[cat].toLowerCase();
+    const n1 = list.filter(h => h.peak === 1), t5 = list.filter(h => h.peak <= 5), t10 = list.filter(h => h.peak <= 10);
+    let m1 = 0, m5 = 0, mAll = 0;
+    const perMonth = new Array(M.length).fill(0);
+    list.forEach(h => h.ranks.forEach((p, i) => { if (!p) return; mAll++; perMonth[i]++; if (p.rank === 1) m1++; if (p.rank <= 5) m5++; }));
+    const most = Math.max(...perMonth), mostI = perMonth.indexOf(most);
+    // Entries already on the very first chart (May 2021) didn't really debut there, so skip them when possible
+    const debutPool = list.some(h => h.first > 0) ? list.filter(h => h.first > 0) : list;
+    const debut = debutPool.slice().sort((x, y) => x.ranks[x.first].rank - y.ranks[y.first].rank || x.first - y.first)[0];
+    const longest = list.slice().sort((x, y) => y.months - x.months || x.peak - y.peak)[0];
+    const topRun = list.slice().sort((x, y) => y.no1 - x.no1 || x.first - y.first)[0];
+    const firstNo1 = n1.slice().sort((x, y) => firstAt(x, 1) - firstAt(y, 1))[0];
+    const link = h => `<a class="lnk" href="${pageHref(cat, h.key)}">${esc(h.title)}</a>`;
+    const tiles = [
+      achTile(`No. 1 ${words}`, n1.length, firstNo1 ? `first: ${link(firstNo1)}, ${shortLabel(M[firstAt(firstNo1, 1)])}` : 'none yet', n1.length > 0),
+      achTile(`Top 5 ${words}`, t5.length, `${plural(t10.length, 'top 10 ' + word)}`),
+      achTile(`Charted ${words}`, list.length, `${plural(mAll, word + '-month')} on the charts`),
+      achTile('Months at No. 1', m1, m1 ? `most: ${link(topRun)} (${topRun.no1})` : 'counted across all ' + words, m1 > 0),
+      achTile('Months in the top 5', m5, `counted across all ${words}`),
+      achTile('Most at once', most, `${most === 1 ? word : words} on the ${monthLabel(M[mostI])} chart`),
+      achTile('Best debut', `No. ${debut.ranks[debut.first].rank}`, `${link(debut)}, ${shortLabel(M[debut.first])}`, debut.ranks[debut.first].rank === 1),
+      achTile('Most months charted', plural(longest.months, 'month'), link(longest))
+    ];
+    const chips = n1.length ? `<div class="achips"><span>No. 1 ${words}</span>${n1.sort((x, y) => firstAt(x, 1) - firstAt(y, 1)).map(h => `<a href="${pageHref(cat, h.key)}">${esc(h.title)}${h.no1 > 1 ? ` <b>×${h.no1}</b>` : ''}</a>`).join('')}</div>` : '';
+    return `<div class="tiles">${tiles.join('')}</div>${chips}`;
+  }
+  function achTile(label, value, note, hot) {
+    return `<div class="tile${hot ? ' hot' : ''}"><div class="tv">${value}</div><div class="tk">${label}</div><div class="tn">${note}</div></div>`;
+  }
+  function artistAchievements(a) {
+    const parts = [];
+    const h = a.h;
+    if (h) {
+      let run = 0, best = 0, bestEnd = -1, top5 = 0, crowns = 0;
+      h.ranks.forEach((p, i) => {
+        if (p) { run++; if (run > best) { best = run; bestEnd = i; } if (p.rank <= 5) top5++; } else run = 0;
+        if (p && p.rank === 1) {
+          const songTop = M[i].data.songs[0], albumTop = M[i].data.albums[0];
+          const mine = e => e && X.splitCredits(e.artist, e.title).some(n => C.norm(n) === a.key);
+          if (mine(songTop) && mine(albumTop)) crowns++;
+        }
+      });
+      const firstNo1 = firstAt(h, 1);
+      parts.push(`<h4>As an artist</h4><div class="tiles">
+        ${achTile('Months at No. 1', h.no1, firstNo1 >= 0 ? `first: ${shortLabel(M[firstNo1])}` : 'none yet', h.no1 > 0)}
+        ${achTile('Months in the top 5', top5, `of ${plural(h.months, 'month')} on the chart`)}
+        ${achTile('Longest streak', plural(best, 'month'), best > 1 ? `in a row, ${shortLabel(M[bestEnd - best + 1])} – ${shortLabel(M[bestEnd])}` : 'on the artists chart')}
+        ${achTile('Triple crowns', crowns, 'months at No. 1 on artists, songs and albums at once', crowns > 0)}
+      </div>`);
+    }
+    if (a.songs.length) {
+      const feats = a.songs.some(s => C.norm(s.artist) !== a.key);
+      parts.push(`<h4>Songs${feats ? ' <small>incl. features</small>' : ''}</h4>${entryAchievements(a.songs, 'songs')}`);
+    }
+    if (a.albums.length) parts.push(`<h4>Albums</h4>${entryAchievements(a.albums, 'albums')}`);
+    return parts.length ? `<h3 class="sec">Achievements</h3><div class="ach">${parts.join('')}</div>` : '';
+  }
+
   function renderArtist(key) {
     const a = X.artists.get(key);
     if (!a) return notFound('artist');
@@ -458,6 +521,7 @@
       html = `<div class="hero">${tileFor('artists', fake, 'big')}<div class="info"><div class="eyebrow">Artist</div><h2>${esc(a.name)}</h2>
         <p class="hint">Never made the monthly artists top ${C.CHART_SIZE}, but shows up on the songs or albums charts.</p></div></div>`;
     }
+    html += artistAchievements(a);
     if (a.albums.length) html += `<h3 class="sec">Albums</h3><div class="cards">${a.albums.map(x => cardHtml('albums', x)).join('')}</div>`;
     if (a.songs.length) html += `<h3 class="sec">Songs</h3>${songList(a.songs, 'art' + key)}`;
     return html;
