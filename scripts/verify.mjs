@@ -164,6 +164,25 @@ for (const cat of ['songs', 'artists']) {
   assert.deepEqual(reconstructed.M[0].data[cat], unrecovered.M[0].data[cat], `${cat} must not change during collection recovery`);
 }
 
+// Album minutes from songs: Replay months credit an album with at least its songs' plays × length,
+// capped at the artist's minutes; never lowers a listed album, and other sources are left alone.
+const estFixture = {
+  months: [{ month: '2024-01', source: 'apple', artists: [['Test Artist', 50], ['Other', 30]],
+    songs: [['Hit', 'Test Artist', 10], ['Deep Cut', 'Test Artist', 4]],
+    albums: [['Rival', 'Other', 30], ['Album', 'Test Artist', 5]] },
+  { month: '2024-02', source: 'spotify', artists: [['Test Artist', 9]],
+    songs: [['Hit', 'Test Artist', 3]], albums: [['Album', 'Test Artist', 9]] }],
+  tracks: { 'Album — Test Artist': ['Hit', 'Deep Cut'] },
+  lengths: { 'Hit — Test Artist': 180, 'Deep Cut — Test Artist': 240 }
+};
+const est = C.build(estFixture);
+assert.deepEqual(est.M[0].data.albums.map(e => [e.title, e.val]), [['Album', 46], ['Rival', 30]], '10×3 + 4×4 minutes');
+assert.deepEqual(est.M[1].data.albums.map(e => [e.title, e.val]), [['Album', 9]], 'exact sources stay as they are');
+assert.equal(est.T.albums.get('album|testartist').total, 55);
+estFixture.months[0].artists[0][1] = 40;
+assert.equal(C.build(estFixture).M[0].data.albums[0].val, 40, 'capped at the artist’s minutes');
+assert.equal(C.build({ ...estFixture, lengths: undefined }).M[0].data.albums[0].title, 'Rival', 'off without lengths');
+
 const original = C.build({ ...window.MUSICBOX, releases: {} });
 const beforeRecovery = C.build({ ...window.MUSICBOX, releases: {}, collectionListening: {} });
 for (const cat of ['songs', 'artists']) {

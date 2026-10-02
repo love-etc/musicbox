@@ -93,6 +93,50 @@
       return full;
     };
     const RAW = DB.months.map(m => ({ ...m, full: keyed(m) }));   // one per source file, used for totals
+
+    // ---- Album minutes worked out from songs ----
+    // Replay's monthly album list can miss albums that were clearly played a lot (plays
+    // get split between editions and singles), so in Replay months each album is credited
+    // with at least (plays of its charted songs × song length), capped at the artist's
+    // minutes that month. Songs are tied to albums by data/tracks.json; lengths come from
+    // data/lengths.json (3:30 when unknown). Live albums and best-ofs only count their own
+    // live versions. Needs data/lengths.json; set ESTIMATE_FROM to new Set([]) to switch it off.
+    const ESTIMATE_FROM = DB.lengths ? new Set(['apple']) : new Set();
+    const SONG_ALBUM = new Map();   // song key -> { album: [title, artist], sec }
+    Object.entries(DB.tracks || {}).forEach(([ak, songs]) => {
+      if (ak.startsWith('_')) return;
+      const i = ak.lastIndexOf(' — '), albumArtist = ak.slice(i + 3);
+      songs.forEach(s => {
+        const j = s.lastIndexOf(' — ');
+        const [st, sa] = j < 0 ? rename('songs', s, artistName(albumArtist)) : rename('songs', s.slice(0, j), artistName(s.slice(j + 3)));
+        const sec = (DB.lengths || {})[j < 0 ? s + ' — ' + albumArtist : s] || 210;
+        const k = norm(st) + '|' + norm(sa);
+        if (!SONG_ALBUM.has(k)) SONG_ALBUM.set(k, { album: [ak.slice(0, i), albumArtist], sec });
+      });
+    });
+    const NOT_STUDIO = /\blive\b|tour|bercy|concert|best of|greatest|gold\b|in the mix/i;
+    RAW.forEach(m => {
+      if (!ESTIMATE_FROM.has(m.source)) return;
+      const est = new Map();   // album (group) key -> album entry with estimated minutes
+      m.full.songs.forEach(s => {
+        const sa = SONG_ALBUM.get(s.key); if (!sa) return;
+        if (NOT_STUDIO.test(sa.album[0]) && !/\blive\b/i.test(s.title)) return;
+        const a = entry('albums', [sa.album[0], sa.album[1], 0]); if (!a) return;
+        const e = est.get(a.key) || a;
+        e.val += s.val * sa.sec / 60; est.set(a.key, e);
+      });
+      if (!est.size) return;
+      const art = new Map(m.full.artists.map(a => [a.key, a.val]));
+      const floor = m.full.artists.length ? Math.min(...m.full.artists.map(a => a.val)) : Infinity;
+      const listed = new Map();   // album (group) key -> minutes Replay already lists
+      m.full.albums.forEach(e => listed.set(e.key, (listed.get(e.key) || 0) + e.val));
+      est.forEach((e, k) => {
+        const cap = art.get(norm(String(e.artist).split(/ & |, /)[0])) ?? floor;
+        const v = Math.round(Math.min(e.val, cap)), have = listed.get(k) || 0;
+        if (v > have) m.full.albums.push({ ...e, val: v - have });   // top up to the estimate
+      });
+      m.full.albums.sort((a, b) => b.val - a.val);
+    });
     const byMonth = new Map();
     RAW.forEach(m => { if (!byMonth.has(m.month)) byMonth.set(m.month, []); byMonth.get(m.month).push(m); });
     const ORDER = ['apple', 'deezer', 'spotify', 'lastfm'];

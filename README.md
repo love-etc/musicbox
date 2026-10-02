@@ -35,6 +35,7 @@ data/
   images.json           [type, title, artist, imageUrl] rows for artwork
   aliases.json          renames so histories join up (optional)
   tracks.json           which charted songs are on which charted album
+  lengths.json          song lengths in seconds (album minutes from songs, below)
   releases.json         singles grouped into albums, and album exclusions
   collection-listening.json  collection minutes recovered from raw playback
 scripts/
@@ -120,9 +121,8 @@ kept for reference. `source` is `apple`, `deezer`, `spotify` or `lastfm`; `total
 
 If two files cover the same month (say `data/charts/2026-01.json` from Apple and
 `data/spotify/2026-01.json`), they're merged: values for the same song, album or
-artist are added together and the month is re-ranked. In years that have Apple
-Music months, the odd ones out get a small tag in the month bar: `+SP` for Apple
-plus Spotify, `SP`/`LFM` for a month from Spotify or Last.fm alone.
+artist are added together and the month is re-ranked. The site never says which
+service a month came from.
 
 ## Spotify
 
@@ -232,6 +232,17 @@ counted twice. Other services keep their existing totals; missing listening on
 those services is not estimated. Collections use the same presentation as other
 albums. Their updated chart positions also feed year-end, all-time and awards
 calculations.
+
+### Album minutes from songs
+
+Replay's monthly album list sometimes misses albums that were obviously played a
+lot (STARFUCKER in May 2024, E•MO•TION in June 2021), probably because plays get
+split between editions and singles. So in Replay months each album is credited
+with at least the plays of its charted songs × each song's length
+(`data/lengths.json`, 3:30 when unknown), capped at the artist's minutes that
+month. Listed albums are never lowered, Spotify/Deezer/Last.fm months are left as
+they are, and live albums and best-ofs only count their own live versions. This
+is `ESTIMATE_FROM` in `site/charts.js`; set it to `new Set()` to switch it off.
 
 ## Aliases
 
