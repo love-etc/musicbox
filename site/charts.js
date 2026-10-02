@@ -7,6 +7,7 @@
   const CHART_SIZE = 15;      // positions per monthly chart (points: No. 1 = 15 … No. 15 = 1)
   const YEAR_END_SIZE = 25;   // positions shown on year-end charts
   const ALL_TIME_SIZE = 50;   // positions shown on the all-time chart
+  const LIBRARY_LIMITS = { albums: 300, artists: 90, songs: 600 };
   // How year-end and all-time charts are ranked:
   //   'totals' = Apple Replay style: most plays (songs) / minutes (albums, artists) over the period.
   //              Uses Apple's full-year Replay totals where they exist, otherwise the monthly lists.
@@ -22,6 +23,21 @@
 
   // Month index helpers: "2021-05" <-> absolute month number
   const abs = ym => { const [y, m] = ym.split('-').map(Number); return y * 12 + (m - 1); };
+
+  // A missing calendar month or an off-chart month breaks a consecutive run.
+  function longestRun(ranks, months, maxRank = CHART_SIZE) {
+    let length = 0, start = -1;
+    let best = { value: 0, start: -1, end: -1 };
+    ranks.forEach((p, i) => {
+      if (!p || p.rank > maxRank) { length = 0; return; }
+      if (!length || i === 0 || abs(months[i].month) !== abs(months[i - 1].month) + 1) {
+        length = 0; start = i;
+      }
+      length++;
+      if (length > best.value) best = { value: length, start, end: i };
+    });
+    return best;
+  }
 
   function build(DB) {
     const alias = DB.aliases || {};
@@ -233,6 +249,29 @@
       library[cat].forEach((h, i) => { h.libRank = i + 1; });
     });
 
+    // Awards use the complete chart history, independent of library display limits.
+    const awards = {};
+    CATS.forEach(cat => {
+      awards[cat] = { no1: [], streak: [], monthly: [], no1Streak: [], months: [], points: [] };
+      H[cat].forEach(h => {
+        h.streak = longestRun(h.ranks, M);
+        const no1Streak = longestRun(h.ranks, M, 1);
+        let monthly = { value: 0, start: -1, end: -1 };
+        h.ranks.forEach((p, i) => {
+          if (p && p.val > monthly.value) monthly = { value: p.val, start: i, end: i };
+        });
+        const records = { no1: { value: h.no1 }, streak: h.streak, monthly, no1Streak,
+          months: { value: h.months }, points: { value: h.points } };
+        Object.entries(records).forEach(([kind, record]) => {
+          if (record.value > 0) awards[cat][kind].push({ h, ...record });
+        });
+      });
+      Object.values(awards[cat]).forEach(rows => {
+        rows.sort((a, b) => b.value - a.value || a.h.title.localeCompare(b.h.title) || a.h.key.localeCompare(b.h.key));
+        rows.forEach((r, i) => { r.rank = i && r.value === rows[i - 1].value ? rows[i - 1].rank : i + 1; });
+      });
+    });
+
     // ---- Songs on albums (data/tracks.json) ----
     Object.entries(DB.tracks || {}).forEach(([ak, songs]) => {
       if (ak.startsWith('_')) return;
@@ -272,10 +311,10 @@
       a.total = a.h ? a.h.total : (T.artists.get(a.key) || {}).total || 0;
     });
 
-    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, artists: A, splitCredits };
+    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits };
   }
 
-  const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, build };
+  const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, LIBRARY_LIMITS, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, longestRun, build };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Charts = api;
 })(typeof window !== "undefined" ? window : globalThis);

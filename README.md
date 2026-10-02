@@ -11,6 +11,19 @@ carry over from December into January. There are also year-end charts, an
 all-time chart, Apple's own full-year Replay lists, and a library with a page
 for every album, artist and song that ever charted.
 
+The library shows the top 300 albums, 90 artists and 600 songs by known listening
+totals. Albums and artists have grid and list views; lists can be sorted by name,
+peak, months charted, months at No. 1, or plays/minutes. Limits apply only to the
+library view, so all detail pages and chart histories remain available.
+
+The **Awards** page has six all-time leaderboards for songs, albums and artists:
+months at No. 1, longest chart run, biggest single month, longest run at No. 1,
+total months charted, and chart points. It uses the full monthly top 15 history
+and shows up to five entries per award, with shared ranks for tied values.
+Consecutive runs cross calendar years but stop at missing or off-chart months.
+For equal-length runs or equally big months, the earliest occurrence is shown.
+The compact year selector sits in the chart navigation bar beside the months.
+
 ## Layout
 
 ```
@@ -51,6 +64,7 @@ At the top of `site/charts.js`:
 | `YEAR_END_METHOD` | `'totals'` ranks year-end charts like Apple Replay (most plays / minutes); `'points'` uses chart points and brings back a separate "Replay YYYY" tab with Apple's own list |
 | `ALL_TIME_METHOD` | same choice for the all-time chart (default `'points'`) |
 | `YEAR_END_SIZE`, `ALL_TIME_SIZE` | how many positions those charts show |
+| `LIBRARY_LIMITS` | maximum albums, artists and songs in the library view |
 
 "Totals" use Apple's full-year Replay number where it exists and otherwise add up
 the monthly lists (top 20 artists, 30 songs, 15 albums), so they're a floor.

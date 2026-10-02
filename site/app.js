@@ -4,6 +4,7 @@
      #/2023/year-end/albums     a year-end chart        #/2023/replay/artists  Apple's Replay list
      #/all-time/songs           the all-time chart
      #/library/albums           everything that ever charted, ranked by listening totals
+     #/awards/songs             all-time chart records
      #/album/<key>  #/artist/<key>  #/song/<key>        detail pages */
 (function () {
   const DB = window.MUSICBOX;
@@ -75,17 +76,21 @@
   };
 
   // ---- State (mirrored in the URL hash) ----
-  // view: month "2023-07" | "year-end" | "replay" | "all-time" | "library" | "album" | "artist" | "song"
+  // view: month "2023-07" | "year-end" | "replay" | "all-time" | "library" | "awards" | detail type
   let state = { year: LAST.year, view: LAST.month, cat: 'songs', key: null };
   const open = new Set();
   const panelYear = new Map();
   let libFilter = '';
+  const libPrefs = Object.fromEntries(CATS.map(cat => [cat, {
+    layout: cat === 'songs' ? 'list' : 'grid', key: 'total', dir: -1
+  }]));
 
   function readHash() {
     const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
-    if (!parts.length) return;
+    if (!parts.length) { state = { year: LAST.year, view: LAST.month, cat: 'songs', key: null }; return; }
     const [a, b, c] = parts;
     if (a === 'library') { state = { ...state, view: 'library', cat: CATS.includes(b) ? b : 'albums', key: null }; return; }
+    if (a === 'awards') { state = { ...state, view: 'awards', cat: CATS.includes(b) ? b : 'songs', key: null }; return; }
     if (a === 'album' || a === 'artist' || a === 'song') { state = { ...state, view: a, key: parts.slice(1).join('/') }; return; }
     if (a === 'all-time') { state = { year: 'all', view: 'all-time', cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
     if (/^\d{4}-\d{2}$/.test(a) && byMonth.has(a)) { state = { year: +a.slice(0, 4), view: a, cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
@@ -96,7 +101,7 @@
     }
   }
   function hashFor(s) {
-    if (s.view === 'library') return `#/library/${s.cat}`;
+    if (s.view === 'library' || s.view === 'awards') return `#/${s.view}/${s.cat}`;
     if (s.view === 'album' || s.view === 'artist' || s.view === 'song') return `#/${s.view}/${enc(s.key)}`;
     if (s.view === 'all-time') return `#/all-time/${s.cat}`;
     if (/^\d{4}-\d{2}$/.test(s.view)) return `#/${s.view}/${s.cat}`;
@@ -114,7 +119,7 @@
     if (ms.length) return ms[ms.length - 1].month;
     return hasReplay(y) ? 'replay' : 'year-end';
   }
-  const isChartView = () => !['library', 'album', 'artist', 'song'].includes(state.view);
+  const isChartView = () => !['library', 'awards', 'album', 'artist', 'song'].includes(state.view);
 
   // ---- Bits ----
   function tile(seed, letterSrc, round, url, cls = '') {
@@ -343,72 +348,116 @@
       <div class="ct">${esc(h.title)}</div>${sub}
       <div class="cm">${fmt(h.total || 0)} ${UNIT[cat]} · peak ${pk(h.peak)}</div></a>`;
   };
-  const songRows = (list, prefix) => list.map((h, i) => rowHtml({
-    cat: 'songs', id: `${prefix}|songs|${h.key}`, rank: i + 1, mvHtml: '', e: h, h, flag: '',
+  const listRows = (list, prefix, cat) => list.map((h, i) => rowHtml({
+    cat, id: `${prefix}|${cat}|${h.key}`, rank: i + 1, mvHtml: '', e: h, h, flag: '',
     inline: `PEAK ${pk(h.peak)} · ${h.months} MO${h.months === 1 ? '' : 'S'}${h.no1 ? ` · ${h.no1}× NO. 1` : ''}`,
-    c1: pk(h.peak), c2: h.months, c3: h.no1 || '–', val: fmt(h.total || 0), unit: 'plays', plain: prefix !== 'lib'
+    c1: pk(h.peak), c2: h.months, c3: h.no1 || '–', val: fmt(h.total || 0), unit: UNIT[cat], plain: true
   })).join('');
 
-  // Song lists can be re-sorted by clicking a column (or a chip on phones)
+  // All library categories share sortable columns (or chips on phones).
   const SORTS = {
+    title:  { label: 'Name',   first: 1,  get: h => h.title },
     peak:   { label: 'Peak',   first: 1,  get: h => h.peak },
-    months: { label: 'MOs',    first: -1, get: h => h.months },
+    months: { label: 'Months', first: -1, get: h => h.months },
     no1:    { label: 'No. 1s', first: -1, get: h => h.no1 || 0 },
-    total:  { label: 'Plays',  first: -1, get: h => h.total || 0 }
+    total:  { label: 'Total',  first: -1, get: h => h.total || 0 }
   };
   const LISTS = new Map();
   function sortList(L) {
     const { get } = SORTS[L.key];
-    return L.list.slice().sort((a, b) => L.dir * (get(a) - get(b)) || (b.total || 0) - (a.total || 0) || a.peak - b.peak || a.title.localeCompare(b.title));
+    return L.list.slice().sort((a, b) => L.dir * (L.key === 'title' ? get(a).localeCompare(get(b)) : get(a) - get(b)) || (b.total || 0) - (a.total || 0) || a.peak - b.peak || a.title.localeCompare(b.title) || a.key.localeCompare(b.key));
   }
-  function songListInner(id) {
+  const sortLabel = (key, cat) => key === 'total' ? (cat === 'songs' ? 'Plays' : 'Minutes') : SORTS[key].label;
+  function rankedListInner(id) {
     const L = LISTS.get(id);
     const th = k => {
       const on = L.key === k;
-      return `<button type="button" class="sort${on ? ' on' : ''}" data-k="${k}" aria-sort="${on ? (L.dir === 1 ? 'ascending' : 'descending') : 'none'}">${k === 'total' ? 'plays' : SORTS[k].label}<i>${on ? (L.dir === 1 ? '▲' : '▼') : ''}</i></button>`;
+      const label = sortLabel(k, L.cat);
+      return `<button type="button" class="sort${on ? ' on' : ''}" data-k="${k}" aria-label="${label}${on ? ', ' + (L.dir === 1 ? 'ascending' : 'descending') : ''}" aria-pressed="${on}">${label}<i aria-hidden="true">${on ? (L.dir === 1 ? '▲' : '▼') : ''}</i></button>`;
     };
-    const chips = `<div class="sortchips" role="group" aria-label="Sort songs">Sort by ${Object.keys(SORTS).map(k => `<button type="button" data-k="${k}" aria-pressed="${L.key === k}">${SORTS[k].label}${L.key === k ? (L.dir === 1 ? ' ▲' : ' ▼') : ''}</button>`).join('')}</div>`;
-    const head = `<div class="cols"><div class="c">#</div><div></div><div></div><div>Title / Artist</div><div class="c">${th('peak')}</div><div class="c">${th('months')}</div><div class="c">${th('no1')}</div><div class="r">${th('total')}</div><div></div></div>`;
-    return chips + head + songRows(sortList(L), L.prefix);
+    const chips = `<div class="sortchips" role="group" aria-label="Sort ${CATNAME[L.cat].toLowerCase()}">Sort by ${Object.keys(SORTS).map(k => `<button type="button" data-k="${k}" aria-pressed="${L.key === k}">${sortLabel(k, L.cat)}${L.key === k ? (L.dir === 1 ? ' ▲' : ' ▼') : ''}</button>`).join('')}</div>`;
+    const head = `<div class="cols"><div class="c">#</div><div></div><div></div><div>${th('title')}</div><div class="c">${th('peak')}</div><div class="c">${th('months')}</div><div class="c">${th('no1')}</div><div class="r">${th('total')}</div><div></div></div>`;
+    return chips + head + listRows(sortList(L), L.prefix, L.cat);
   }
-  function songList(list, prefix) {
+  function rankedList(list, prefix, cat = 'songs') {
     const id = 'sl' + LISTS.size;
-    LISTS.set(id, { list, prefix, key: 'total', dir: -1 });
-    return `<div class="songlist" data-list="${id}">${songListInner(id)}</div>`;
+    const prefs = prefix === 'lib' ? libPrefs[cat] : { key: 'total', dir: -1 };
+    LISTS.set(id, { list, prefix, cat, key: prefs.key, dir: prefs.dir });
+    return `<div class="ranked-list" data-list="${id}">${rankedListInner(id)}</div>`;
   }
-  function bindSongLists(root) {
-    root.querySelectorAll('.songlist[data-list]').forEach(el => {
+  function bindRankedLists(root) {
+    root.querySelectorAll('.ranked-list[data-list]').forEach(el => {
       el.addEventListener('click', ev => {
         const b = ev.target.closest('button[data-k]');
         if (!b) return;
         const L = LISTS.get(el.dataset.list), k = b.dataset.k;
         L.dir = L.key === k ? -L.dir : SORTS[k].first;
         L.key = k;
-        el.innerHTML = songListInner(el.dataset.list);
+        if (L.prefix === 'lib') Object.assign(libPrefs[L.cat], { key: L.key, dir: L.dir });
+        el.innerHTML = rankedListInner(el.dataset.list);
         bindRows(el);
         if (state.view === 'library') applyFilter();
+        const controls = [...el.querySelectorAll(`button[data-k="${k}"]`)];
+        controls.find(control => control.getClientRects().length)?.focus({ preventScroll: true });
       });
     });
   }
 
   function renderLibrary() {
-    const cat = state.cat, list = X.library[cat];
-    const body = cat === 'songs'
-      ? songList(list, 'lib')
-      : `<div class="cards">${list.map((h, i) => cardHtml(cat, h, i + 1)).join('')}</div>`;
-    return `<div class="head"><div><div class="eyebrow">Library · ${fmt(list.length)} ${CATNAME[cat].toLowerCase()} that made the monthly top ${C.CHART_SIZE}</div><h2>${CATNAME[cat]}</h2></div>
-        <div class="meta"><b>Ranked by ${UNIT_LONG[cat]}</b><br>Every month + Apple’s year totals</div></div>
-      <div class="filter"><input id="q" type="search" placeholder="Filter ${CATNAME[cat].toLowerCase()}…" value="${esc(libFilter)}" aria-label="Filter"></div>
-      ${body}`;
+    const cat = state.cat, list = X.library[cat].slice(0, C.LIBRARY_LIMITS[cat]), prefs = libPrefs[cat];
+    const body = prefs.layout === 'list'
+      ? rankedList(list, 'lib', cat)
+      : `<div class="cards">${sortList({ list, ...prefs }).map((h, i) => cardHtml(cat, h, i + 1)).join('')}</div>`;
+    return `<div class="head"><div><div class="eyebrow">Library · Top ${fmt(list.length)} by known ${UNIT_LONG[cat]}</div><h2>${CATNAME[cat]}</h2></div>
+        <div class="meta"><b>${fmt(list.length)} of ${fmt(X.library[cat].length)} charted ${cat}</b><br>Every month + Apple’s year totals</div></div>
+      <div class="library-tools"><div class="filter"><input id="q" type="search" placeholder="Filter ${CATNAME[cat].toLowerCase()}…" value="${esc(libFilter)}" aria-label="Filter ${cat}"></div>
+        ${cat !== 'songs' ? `<div class="view-toggle" role="group" aria-label="Library layout"><button type="button" data-layout="grid" aria-pressed="${prefs.layout === 'grid'}">▦ Grid</button><button type="button" data-layout="list" aria-pressed="${prefs.layout === 'list'}">☷ List</button></div>` : ''}</div>
+      <p class="library-status" id="library-status" role="status"></p>
+      ${body}<p class="empty" id="library-empty" hidden>No matches in this top ${list.length}. Try another name.</p>`;
   }
   function applyFilter() {
     const q = libFilter.trim().toLowerCase();
-    document.querySelectorAll('#page .card').forEach(c => { c.hidden = q && !c.dataset.q.includes(q); });
-    document.querySelectorAll('#page .songlist .row').forEach(r => {
+    let visible = 0, count = 0;
+    document.querySelectorAll('#page .card').forEach(c => { c.hidden = !!q && !c.dataset.q.includes(q); count++; if (!c.hidden) visible++; });
+    document.querySelectorAll('#page .ranked-list .row').forEach(r => {
       const h = panelData.get(r.dataset.id); if (!h) return;
       const hit = !q || (h.h.title + ' ' + h.h.artist).toLowerCase().includes(q);
-      r.hidden = !hit; if (!hit) r.nextElementSibling.hidden = true;
+      r.hidden = !hit; count++; if (hit) visible++;
+      r.nextElementSibling.hidden = !hit || r.getAttribute('aria-expanded') !== 'true';
     });
+    $('library-empty').hidden = visible > 0;
+    const prefs = libPrefs[state.cat];
+    $('library-status').textContent = `${q ? visible + ' of ' : ''}${count} ${state.cat} · Ordered by ${sortLabel(prefs.key, state.cat).toLowerCase()} ${prefs.dir === 1 ? '↑' : '↓'}${prefs.layout === 'list' ? ' · Select a sort option to reorder' : ''}`;
+  }
+
+  // ---- Awards ----
+  function renderAwards() {
+    const cat = state.cat;
+    const definitions = [
+      ['no1', 'Most months at No. 1', 'Every month at the top, including return visits.', 'months'],
+      ['streak', 'Longest chart run', `Consecutive months in the top ${C.CHART_SIZE}.`, 'months'],
+      ['monthly', `Most ${UNIT_LONG[cat]} in a month`, 'The biggest single month for each entry.', UNIT[cat]],
+      ['no1Streak', 'Longest run at No. 1', 'Consecutive months holding the top spot.', 'months'],
+      ['months', 'Most months on chart', 'Every appearance, across all chart runs.', 'months'],
+      ['points', 'Most chart points', `${C.CHART_SIZE} points for No. 1, down to 1 for No. ${C.CHART_SIZE}.`, 'points']
+    ];
+    const dateLink = i => `<a class="lnk" href="#/${M[i].month}/${cat}">${shortLabel(M[i])}</a>`;
+    const cards = definitions.map(([kind, title, description, unit], index) => {
+      const records = X.awards[cat][kind];
+      const rows = records.slice(0, 5).map(r => {
+        const h = r.h;
+        const period = r.start !== undefined ? `${dateLink(r.start)}${r.end !== r.start ? ' – ' + dateLink(r.end) : ''}` : '';
+        return `<li class="award-entry${r.rank === 1 ? ' winner' : ''}"><span class="award-rank">${r.rank}</span>
+          <a class="award-art" href="${pageHref(cat, h.key)}" aria-label="${esc(h.title)}">${tileFor(cat, h)}</a>
+          <div class="award-name"><a class="lnk" href="${pageHref(cat, h.key)}">${esc(h.title)}</a>${h.artist ? `<div class="award-artist">${esc(h.artist)}</div>` : ''}${period ? `<div class="award-period">${period}</div>` : ''}</div>
+          <div class="award-value">${fmt(r.value)}<small>${r.value === 1 && unit === 'months' ? 'month' : unit}</small></div></li>`;
+      }).join('');
+      return `<article class="award-card"><div class="award-heading"><span class="award-number">${String(index + 1).padStart(2, '0')}</span><div><h3>${title}</h3><p>${description}</p></div></div>
+        ${records.length ? `<ol class="award-leaders">${rows}</ol>` : '<p class="empty">No records yet.</p>'}</article>`;
+    }).join('');
+    return `<div class="head"><div><div class="eyebrow">All-time records · ${shortLabel(FIRST)} – ${shortLabel(LAST)}</div><h2>Awards</h2></div><div class="meta"><b>${CATNAME[cat]} · ${M.length} monthly charts</b><br>The leaders, the longest runs, the biggest months</div></div>
+      <p class="awards-intro">Records from the full monthly top ${C.CHART_SIZE} history. Each leaderboard shows up to five entries; ties share a rank. Streaks cross years, but break at an off-chart or missing month.</p>
+      <div class="award-grid">${cards}</div>`;
   }
 
   // ---- Detail pages ----
@@ -459,7 +508,7 @@
     return hero('albums', h, `Album`, artistLinks(h.artist))
       + histSection(h, 'alb|' + key)
       + `<h3 class="sec">Charted songs</h3>`
-      + (songs.length ? songList(songs, 'alb' + key)
+      + (songs.length ? rankedList(songs, 'alb' + key)
                       : `<p class="hint">No songs from this album made the monthly top ${C.CHART_SIZE} (or they’re not matched yet: see data/tracks.json).</p>`)
       + (more.length ? `<h3 class="sec">More by ${esc(h.artist)}</h3><div class="cards">${more.map(a => cardHtml('albums', a)).join('')}</div>` : '');
   }
@@ -501,9 +550,10 @@
     const parts = [];
     const h = a.h;
     if (h) {
-      let run = 0, best = 0, bestEnd = -1, top5 = 0, crowns = 0;
+      const { value: best, start: bestStart, end: bestEnd } = h.streak;
+      let top5 = 0, crowns = 0;
       h.ranks.forEach((p, i) => {
-        if (p) { run++; if (run > best) { best = run; bestEnd = i; } if (p.rank <= 5) top5++; } else run = 0;
+        if (p && p.rank <= 5) top5++;
         if (p && p.rank === 1) {
           const songTop = M[i].data.songs[0], albumTop = M[i].data.albums[0];
           const mine = e => e && X.splitCredits(e.artist, e.title).some(n => C.norm(n) === a.key);
@@ -514,7 +564,7 @@
       parts.push(`<h4>As an artist</h4><div class="tiles">
         ${achTile('Months at No. 1', h.no1, firstNo1 >= 0 ? `first: ${shortLabel(M[firstNo1])}` : 'none yet', h.no1 > 0)}
         ${achTile('Months in the top 5', top5, `of ${plural(h.months, 'month')} on the chart`)}
-        ${achTile('Longest streak', plural(best, 'month'), best > 1 ? `in a row, ${shortLabel(M[bestEnd - best + 1])} – ${shortLabel(M[bestEnd])}` : 'on the artists chart')}
+        ${achTile('Longest streak', plural(best, 'month'), best > 1 ? `in a row, ${shortLabel(M[bestStart])} – ${shortLabel(M[bestEnd])}` : 'on the artists chart')}
         ${achTile('Triple crowns', crowns, 'months at No. 1 on artists, songs and albums at once', crowns > 0)}
       </div>`);
     }
@@ -542,7 +592,7 @@
     }
     html += artistAchievements(a);
     if (a.albums.length) html += `<h3 class="sec">Albums</h3><div class="cards">${a.albums.map(x => cardHtml('albums', x)).join('')}</div>`;
-    if (a.songs.length) html += `<h3 class="sec">Songs</h3>${songList(a.songs, 'art' + key)}`;
+    if (a.songs.length) html += `<h3 class="sec">Songs</h3>${rankedList(a.songs, 'art' + key)}`;
     return html;
   }
   function renderSong(key) {
@@ -554,7 +604,7 @@
     let html = hero('songs', h, 'Song', by) + histSection(h, 'song|' + key);
     if (h.album) {
       const others = (h.album.songs || []).filter(s => s !== h);
-      if (others.length) html += `<h3 class="sec">Also from ${esc(h.album.title)}</h3>${songList(others, 'sng' + key)}`;
+      if (others.length) html += `<h3 class="sec">Also from ${esc(h.album.title)}</h3>${rankedList(others, 'sng' + key)}`;
     }
     return html;
   }
@@ -562,12 +612,12 @@
 
   // ---- Chrome: nav, year select, bar, category tabs ----
   const SITE = document.title;
-  let lastChartHash = '#/';
+  let lastChartHash = `#/${LAST.month}/songs`;
   function renderTopNav() {
-    const lib = !isChartView();
-    if (!lib) lastChartHash = hashFor(state);
-    $('topnav').innerHTML = `<a href="${lastChartHash}"${lib ? '' : ' aria-current="page"'}>Charts</a><a href="#/library/albums"${lib ? ' aria-current="page"' : ''}>Library</a>`;
-    $('yearwrap').hidden = lib;
+    const chart = isChartView(), awards = state.view === 'awards';
+    if (chart) lastChartHash = hashFor(state);
+    $('topnav').innerHTML = `<a href="${lastChartHash}"${chart ? ' aria-current="page"' : ''}>Charts</a><a href="#/library/albums"${!chart && !awards ? ' aria-current="page"' : ''}>Library</a><a href="#/awards/songs"${awards ? ' aria-current="page"' : ''}>Awards</a>`;
+    $('yearwrap').hidden = !chart;
   }
   function renderYearSelect() {
     $('year').innerHTML = allYears.slice().reverse().map(y => `<option value="${y}"${y === state.year ? ' selected' : ''}>${y}</option>`).join('')
@@ -576,7 +626,10 @@
   function renderBar() {
     const el = $('months');
     let html = '';
-    if (!isChartView()) {
+    $('bar').setAttribute('aria-label', state.view === 'awards' ? 'Award category' : isChartView() ? 'Choose a chart' : 'Library category');
+    if (state.view === 'awards') {
+      html = CATS.map(c => `<button type="button" data-award="${c}" aria-pressed="${state.cat === c}">${CATNAME[c]}</button>`).join('');
+    } else if (!isChartView()) {
       html = ['albums', 'artists', 'songs'].map(c => `<button type="button" data-lib="${c}" aria-pressed="${state.view === 'library' && state.cat === c}">${CATNAME[c]}</button>`).join('');
       if (state.view !== 'library') html = `<button type="button" data-back="1">← Back</button><span class="sep"></span>` + html;
     } else if (state.year === 'all') {
@@ -595,9 +648,10 @@
     el.innerHTML = html;
     el.querySelectorAll('button[data-v]').forEach(b => b.addEventListener('click', () => go({ view: b.dataset.v })));
     el.querySelectorAll('button[data-lib]').forEach(b => b.addEventListener('click', () => go({ view: 'library', cat: b.dataset.lib, key: null })));
+    el.querySelectorAll('button[data-award]').forEach(b => b.addEventListener('click', () => go({ view: 'awards', cat: b.dataset.award, key: null })));
     el.querySelectorAll('button[data-back]').forEach(b => b.addEventListener('click', () => history.length > 1 ? history.back() : go({ view: 'library', cat: 'albums' })));
     const on = el.querySelector('[aria-pressed="true"]');
-    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (on) el.scrollLeft = Math.max(0, on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2);
   }
   function renderCats() {
     const el = $('cats');
@@ -669,7 +723,7 @@
       ${lfm ? `<p><b>Last.fm months.</b> ${lfm} come${lfm.includes(' and ') ? '' : 's'} from Last.fm. Each scrobble counts as a play, and minutes are worked out from each track’s length. Marked LFM.</p>` : ''}
       <p><b>Columns.</b> LM is last month’s position, PEAK is the best position reached so far and MOS is months on the chart. NEW is a first appearance and RE is a return after dropping out. Different editions of the same album count as one.</p>
       ${yeText}${atText}
-      <p><b>Library totals</b> add up every month something shows up in the lists (Replay shows the top 20 artists, 30 songs and 15 albums; Deezer and Spotify months keep the top 50) plus Apple’s full-year totals where they exist, so they’re a floor: the real numbers are higher. Data built ${esc(DB.builtAt || '')}.</p>`;
+      <p><b>Library totals</b> add up every month something shows up in the lists (Replay shows the top 20 artists, 30 songs and 15 albums; Deezer and Spotify months keep the top 50) plus Apple’s full-year totals where they exist, so they’re a floor: the real numbers are higher. The library shows the top ${C.LIBRARY_LIMITS.albums} albums, ${C.LIBRARY_LIMITS.artists} artists and ${C.LIBRARY_LIMITS.songs} songs by these totals. Awards and detail pages use the full chart history. Data built ${esc(DB.builtAt || '')}.</p>`;
   }
 
   function render() {
@@ -696,11 +750,18 @@
     } else {
       const page = $('page');
       page.innerHTML = state.view === 'library' ? renderLibrary()
+        : state.view === 'awards' ? renderAwards()
         : state.view === 'album' ? renderAlbum(state.key)
         : state.view === 'artist' ? renderArtist(state.key)
         : renderSong(state.key);
       if (state.view === 'library') document.title = `${CATNAME[state.cat]} · Library · ${SITE}`;
-      bindRows(page); bindHist(page); bindSongLists(page);
+      if (state.view === 'awards') document.title = `${CATNAME[state.cat]} · Awards · ${SITE}`;
+      bindRows(page); bindHist(page); bindRankedLists(page);
+      page.querySelectorAll('button[data-layout]').forEach(b => b.addEventListener('click', () => {
+        libPrefs[state.cat].layout = b.dataset.layout;
+        render();
+        page.querySelector(`button[data-layout="${libPrefs[state.cat].layout}"]`).focus({ preventScroll: true });
+      }));
       const q = $('q');
       if (q) { q.addEventListener('input', () => { libFilter = q.value; applyFilter(); }); applyFilter(); }
     }

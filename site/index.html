@@ -16,14 +16,18 @@
     <h1><a href="#/" id="home">musicbox</a></h1>
     <div class="side">
       <nav class="topnav" id="topnav" aria-label="Sections"></nav>
-      <label class="year" id="yearwrap">
-        <span>Year</span>
-        <select id="year" aria-label="Year"></select>
-      </label>
     </div>
   </div>
 </header>
-<nav class="bar" id="bar" aria-label="Choose a chart"><div class="in" id="months"></div></nav>
+<nav class="bar" id="bar" aria-label="Choose a chart">
+  <div class="in">
+    <label class="year" id="yearwrap">
+      <span class="sr-only">Chart year</span>
+      <select id="year" aria-label="Chart year"></select>
+    </label>
+    <div class="months" id="months"></div>
+  </div>
+</nav>
 
 <main class="wrap">
   <section id="charts" aria-live="polite">
