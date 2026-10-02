@@ -3,9 +3,17 @@
    Positions continue across years: movement, peaks and months-on-chart
    carry over from one month to the next regardless of the calendar year. */
 (function (root) {
+  // ---- Settings --------------------------------------------------------------
   const CHART_SIZE = 15;      // positions per monthly chart (points: No. 1 = 15 … No. 15 = 1)
   const YEAR_END_SIZE = 25;   // positions shown on year-end charts
   const ALL_TIME_SIZE = 50;   // positions shown on the all-time chart
+  // How year-end and all-time charts are ranked:
+  //   'totals' = Apple Replay style: most plays (songs) / minutes (albums, artists) over the period.
+  //              Uses Apple's full-year Replay totals where they exist, otherwise the monthly lists.
+  //   'points' = chart points: No. 1 earns CHART_SIZE points, No. CHART_SIZE earns 1, summed per month.
+  const YEAR_END_METHOD = 'totals';
+  const ALL_TIME_METHOD = 'points';
+  // -----------------------------------------------------------------------------
   const CATS = ['songs', 'albums', 'artists'];
 
   const norm = s => String(s).toLowerCase().normalize('NFC')
@@ -89,61 +97,152 @@
     }
     CATS.forEach(cat => H[cat].forEach(h => { h.title = latestTitle(h, M, cat); }));
 
-    // Ranked tally over a set of month indexes
-    function tally(cat, idxs, size) {
+    // ---- Apple's own year-long Replay lists, keyed like the charts ----
+    const replay = {}, replayVal = {};
+    Object.entries(DB.replay || {}).forEach(([y, r]) => {
+      replay[y] = {}; replayVal[y] = {};
+      CATS.forEach(cat => {
+        replayVal[y][cat] = new Map();
+        replay[y][cat] = (r[cat] || []).map((row, i) => {
+          let e;
+          if (cat === 'artists') { const n = artistName(row[0]); e = { title: n, artist: '', val: row[1], key: norm(n) }; }
+          else { const [t, a] = rename(cat, row[0], artistName(row[1])); e = { title: t, artist: a, val: row[2], key: norm(t) + '|' + norm(a) }; }
+          e.rank = i + 1; e.h = H[cat].get(e.key) || null;
+          if (!replayVal[y][cat].has(e.key)) replayVal[y][cat].set(e.key, e);
+          return e;
+        });
+      });
+    });
+
+    // ---- Listening totals ----
+    // Every month's full list (not just the charted top) plus Apple's year totals.
+    // For each year: max(sum of the monthly values, Apple's full-year value). That's a floor:
+    // months where something fell off the lists aren't counted.
+    const years = [...new Set(M.map(m => m.year))];
+    const allYears = [...new Set([...years, ...Object.keys(replay).map(Number)])].sort((a, b) => a - b);
+    const T = {};  // cat -> Map(key -> { key, title, artist, byYear: {y: value}, total, h })
+    CATS.forEach(cat => {
+      const tm = new Map(); T[cat] = tm;
+      const get = e => {
+        if (!tm.has(e.key)) tm.set(e.key, { key: e.key, title: e.title, artist: e.artist, monthly: {}, byYear: {}, total: 0, h: H[cat].get(e.key) || null });
+        return tm.get(e.key);
+      };
+      M.forEach(m => m.full[cat].forEach(e => { const t = get(e); t.monthly[m.year] = (t.monthly[m.year] || 0) + e.val; }));
+      Object.keys(replay).forEach(y => replay[y][cat].forEach(e => get(e)));
+      tm.forEach(t => {
+        allYears.forEach(y => {
+          const r = replayVal[y] && replayVal[y][cat].get(t.key);
+          const v = Math.max(t.monthly[y] || 0, r ? r.val : 0);
+          if (v) { t.byYear[y] = v; t.total += v; }
+        });
+        if (t.h) { t.title = t.h.title; t.artist = t.h.artist; t.h.total = t.total; t.h.byYear = t.byYear; }
+      });
+    });
+
+    // ---- Ranked tallies ----
+    function stats(h, set) {
+      let points = 0, peak = 99, months = 0, no1 = 0, first = -1;
+      if (h) h.ranks.forEach((p, i) => {
+        if (!p || !set.has(i)) return;
+        points += CHART_SIZE + 1 - p.rank; months++; if (p.rank === 1) no1++;
+        if (p.rank < peak) peak = p.rank;
+        if (first < 0) first = i;
+      });
+      return { points, peak, months, no1, first, firstRank: first >= 0 ? h.ranks[first].rank : 99 };
+    }
+    // Chart points over a set of month indexes
+    function tallyPoints(cat, idxs) {
       const set = new Set(idxs), rows = [];
       H[cat].forEach(h => {
-        let points = 0, peak = 99, months = 0, no1 = 0, first = -1;
-        h.ranks.forEach((p, i) => {
-          if (!p || !set.has(i)) return;
-          points += CHART_SIZE + 1 - p.rank; months++; if (p.rank === 1) no1++;
-          if (p.rank < peak) peak = p.rank;
-          if (first < 0) first = i;
-        });
-        if (months) rows.push({ key: h.key, title: h.title, artist: h.artist, h, points, peak, months, no1, first, firstRank: h.ranks[first].rank });
+        const s = stats(h, set);
+        if (s.months) rows.push({ key: h.key, title: h.title, artist: h.artist, h, ...s, value: s.points });
       });
       rows.sort((a, b) => b.points - a.points || a.peak - b.peak || b.no1 - a.no1 || b.months - a.months || a.first - b.first || a.firstRank - b.firstRank);
       rows.forEach((r, i) => { r.rank = i + 1; });
-      return size ? rows.slice(0, size) : rows;
+      return rows;
+    }
+    // Listening totals over a list of years (null = all time)
+    function tallyTotals(cat, yrs) {
+      const set = new Set(yrs ? M.filter(m => yrs.includes(m.year)).map(m => m.i) : M.map(m => m.i)), rows = [];
+      T[cat].forEach(t => {
+        const value = yrs ? yrs.reduce((a, y) => a + (t.byYear[y] || 0), 0) : t.total;
+        if (!value) return;
+        // Apple's own order breaks ties within a single Replay year
+        const rp = yrs && yrs.length === 1 && replayVal[yrs[0]] ? replayVal[yrs[0]][cat].get(t.key) : null;
+        rows.push({ key: t.key, title: t.title, artist: t.artist, h: t.h, ...stats(t.h, set), value, rp: rp ? rp.rank : 999 });
+      });
+      rows.sort((a, b) => b.value - a.value || a.rp - b.rp || a.peak - b.peak || b.months - a.months || a.title.localeCompare(b.title));
+      rows.forEach((r, i) => { r.rank = i + 1; });
+      return rows;
     }
 
-    const years = [...new Set(M.map(m => m.year))];
     const yearEnd = {}, yearEndAll = {};
-    years.forEach(y => {
+    allYears.forEach(y => {
       const idxs = M.filter(m => m.year === y).map(m => m.i);
       yearEnd[y] = {}; yearEndAll[y] = {};
       CATS.forEach(cat => {
-        const all = tally(cat, idxs, 0);
+        const all = YEAR_END_METHOD === 'totals' ? tallyTotals(cat, [y]) : tallyPoints(cat, idxs);
         yearEndAll[y][cat] = new Map(all.map(r => [r.key, r]));
         yearEnd[y][cat] = all.slice(0, YEAR_END_SIZE);
       });
     });
     const allTime = {}, allTimeAll = {};
     CATS.forEach(cat => {
-      const all = tally(cat, M.map(m => m.i), 0);
+      const all = ALL_TIME_METHOD === 'totals' ? tallyTotals(cat, null) : tallyPoints(cat, M.map(m => m.i));
       allTimeAll[cat] = new Map(all.map(r => [r.key, r]));
       allTime[cat] = all.slice(0, ALL_TIME_SIZE);
     });
 
-    // Apple's own year-long Replay lists, matched to chart histories where possible
-    const replay = {};
-    Object.entries(DB.replay || {}).forEach(([y, r]) => {
-      replay[y] = {};
-      CATS.forEach(cat => {
-        replay[y][cat] = (r[cat] || []).map((row, i) => {
-          let e;
-          if (cat === 'artists') { const n = artistName(row[0]); e = { title: n, artist: '', val: row[1], key: norm(n) }; }
-          else { const [t, a] = rename(cat, row[0], artistName(row[1])); e = { title: t, artist: a, val: row[2], key: norm(t) + '|' + norm(a) }; }
-          e.rank = i + 1; e.h = H[cat].get(e.key) || null;
-          return e;
-        });
-      });
+    // ---- Library: everything that ever charted, ranked by listening totals ----
+    const library = {};
+    CATS.forEach(cat => {
+      library[cat] = [...H[cat].values()].sort((a, b) => (b.total || 0) - (a.total || 0) || a.peak - b.peak || b.months - a.months);
+      library[cat].forEach((h, i) => { h.libRank = i + 1; });
     });
 
-    return { M, H, years, yearEnd, yearEndAll, allTime, allTimeAll, replay, tally };
+    // ---- Songs on albums (data/tracks.json) ----
+    Object.entries(DB.tracks || {}).forEach(([ak, songs]) => {
+      if (ak.startsWith('_')) return;
+      const i = ak.lastIndexOf(' — ');
+      const [at, aa] = rename('albums', ak.slice(0, i), artistName(ak.slice(i + 3)));
+      const album = H.albums.get(norm(at) + '|' + norm(aa));
+      if (!album) return;
+      album.songs = album.songs || [];
+      songs.forEach(s => {
+        const j = s.lastIndexOf(' — ');
+        const [st, sa] = j < 0 ? rename('songs', s, aa) : rename('songs', s.slice(0, j), artistName(s.slice(j + 3)));
+        const song = H.songs.get(norm(st) + '|' + norm(sa));
+        if (song && !song.album) { song.album = album; album.songs.push(song); }
+      });
+      album.songs.sort((a, b) => (b.total || 0) - (a.total || 0) || a.peak - b.peak);
+    });
+
+    // ---- Artists: everyone credited on a charted song or album, or charted as an artist ----
+    const splitCredits = (artist, title = '') => {
+      const names = String(artist).split(/\s*(?:,|&| featuring | feat\. | x )\s*/i);
+      const feat = String(title).match(/\((?:feat\.|featuring|with|avec) ([^)]+)\)/i);
+      if (feat) names.push(...feat[1].split(/\s*(?:,|&)\s*/));
+      return [...new Set(names.map(n => artistName(n.trim())).filter(Boolean))];
+    };
+    const A = new Map();
+    const artistEntry = name => {
+      const k = norm(name);
+      if (!A.has(k)) A.set(k, { key: k, name, h: null, albums: [], songs: [] });
+      return A.get(k);
+    };
+    H.artists.forEach(h => { const a = artistEntry(h.title); a.h = h; a.name = h.title; });
+    H.albums.forEach(h => splitCredits(h.artist).forEach(n => { const a = artistEntry(n); if (!a.albums.includes(h)) a.albums.push(h); }));
+    H.songs.forEach(h => splitCredits(h.artist, h.title).forEach(n => { const a = artistEntry(n); if (!a.songs.includes(h)) a.songs.push(h); }));
+    A.forEach(a => {
+      a.albums.sort((x, y) => (y.total || 0) - (x.total || 0));
+      a.songs.sort((x, y) => (y.total || 0) - (x.total || 0));
+      a.total = a.h ? a.h.total : (T.artists.get(a.key) || {}).total || 0;
+    });
+
+    return { M, H, T, years, allYears, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, artists: A, splitCredits };
   }
 
-  const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, CATS, norm, build };
+  const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, build };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Charts = api;
 })(typeof window !== "undefined" ? window : globalThis);

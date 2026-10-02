@@ -28,10 +28,17 @@ for (const cat of C.CATS) {
       if (e.months !== past.length) fail(`${m.month} ${cat} ${e.title}: months`);
     });
   });
-  for (const y of X.years) {
-    const pts = X.yearEnd[y][cat].map(r => r.points);
-    if (pts.some((p, i) => i && p > pts[i - 1])) fail(`${y} ${cat} year-end not sorted`);
+  for (const y of X.allYears) {
+    const v = X.yearEnd[y][cat].map(r => r.value);
+    if (v.some((p, i) => i && p > v[i - 1])) fail(`${y} ${cat} year-end not sorted`);
+    // Apple-style totals: the year value is never below Apple's own full-year number
+    if (C.YEAR_END_METHOD === 'totals' && X.replay[y]) X.replay[y][cat].forEach(e => {
+      const r = X.yearEndAll[y][cat].get(e.key);
+      if (!r || r.value < e.val) fail(`${y} ${cat} ${e.title}: year total ${r && r.value} below Replay ${e.val}`);
+    });
   }
+  // Library totals equal the sum of the per-year totals
+  X.H[cat].forEach(h => { const s = Object.values(h.byYear || {}).reduce((a, b) => a + b, 0); if (s !== (h.total || 0)) fail(`${cat} ${h.title}: total mismatch`); });
 }
-console.log(bad ? `${bad} problem(s)` : `OK: ${X.M.length} months checked, positions continue across ${X.years.join(', ')}`);
+console.log(bad ? `${bad} problem(s)` : `OK: ${X.M.length} months checked, positions continue across ${X.years.join(', ')}; year-end method: ${C.YEAR_END_METHOD}`);
 process.exit(bad ? 1 : 0);

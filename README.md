@@ -1,12 +1,13 @@
 # musicbox
 
-Splinter's monthly music charts: a Billboard-style top 15 of songs, albums and
+musicbox: a Billboard-style top 15 of songs, albums and
 artists for every month since May 2021, built from Apple Music Replay (and
 Last.fm for the months Apple has no data).
 
 Chart runs are continuous across years, so moves, peaks and months-on-chart
 carry over from December into January. There are also year-end charts, an
-all-time chart, and Apple's own full-year Replay lists.
+all-time chart, Apple's own full-year Replay lists, and a library with a page
+for every album, artist and song that ever charted.
 
 ## Layout
 
@@ -16,6 +17,7 @@ data/
   replay/YYYY.json      Apple Music Replay's full-year lists
   images.json           [type, title, artist, imageUrl] rows for artwork
   aliases.json          renames so histories join up (optional)
+  tracks.json           which charted songs are on which charted album
 scripts/
   build.mjs             bundles data/ into site/data.js
   verify.mjs            checks moves, peaks and months-on-chart
@@ -32,8 +34,26 @@ npm run verify    # chart maths sanity check
 npm run serve     # http://localhost:8000 (or just open site/index.html)
 ```
 
-Deploy by publishing the `site/` folder to any static host (GitHub Pages,
-Netlify, Cloudflare Pages…).
+## Settings
+
+At the top of `site/charts.js`:
+
+| Setting | What it does |
+| --- | --- |
+| `CHART_SIZE` | positions per monthly chart (15) |
+| `YEAR_END_METHOD` | `'totals'` ranks year-end charts like Apple Replay (most plays / minutes); `'points'` uses chart points and brings back a separate "Replay YYYY" tab with Apple's own list |
+| `ALL_TIME_METHOD` | same choice for the all-time chart (default `'points'`) |
+| `YEAR_END_SIZE`, `ALL_TIME_SIZE` | how many positions those charts show |
+
+"Totals" use Apple's full-year Replay number where it exists and otherwise add up
+the monthly lists (top 20 artists, 30 songs, 15 albums), so they're a floor.
+
+## Deploying
+
+The built `site/data.js` is committed, so `site/` is ready to publish as is.
+On Cloudflare Pages: connect the repo, leave the build command empty (or use
+`node scripts/build.mjs`) and set the output directory to `site`.
+
 
 ## Month files
 
@@ -57,6 +77,18 @@ kept for reference. `source` is `apple` or `lastfm`; `total` is optional.
 Add or fix artwork in `data/images.json`, then rebuild. Each row is
 `["artist" | "album" | "song", title, artist, url]` (artist is `""` for
 artist rows). Entries without a picture show a lettered tile.
+
+## Albums and their songs
+
+`data/tracks.json` lists the charted songs under the charted album they come
+from (matched against Apple Music tracklists). Fix or add lines there if a song
+lands on the wrong album, then rebuild:
+
+```json
+"Point de suture — Mylène Farmer": ["Dégénération", "Looking for My Name (feat. Moby)"]
+```
+
+Use `"Song — Artist"` when the song's credit differs from the album artist.
 
 ## Aliases
 
