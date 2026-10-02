@@ -627,6 +627,14 @@
     go({ year: LAST.year, view: LAST.month, cat: 'songs', key: null });
     window.scrollTo(0, 0);
   });
+  // Favicon: the newest month's No. 1 album cover (falls back to favicon.svg)
+  const topAlbum = LAST.data.albums[0];
+  const cover = topAlbum && imgFor('albums', topAlbum.key);
+  if (cover) {
+    const icon = $('favicon');
+    icon.type = 'image/jpeg';
+    icon.href = cover.replace(/\/\d+x\d+(bb|ac|cc)\.(jpg|png)$/, '/64x64bb.jpg');
+  }
   readHash();
   renderNotes();
   render();

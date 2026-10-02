@@ -51,8 +51,11 @@ the monthly lists (top 20 artists, 30 songs, 15 albums), so they're a floor.
 ## Deploying
 
 The built `site/data.js` is committed, so `site/` is ready to publish as is.
-On Cloudflare Pages: connect the repo, leave the build command empty (or use
-`node scripts/build.mjs`) and set the output directory to `site`.
+On Cloudflare Pages: connect the repo, set the build command to
+`node scripts/build.mjs` and the output directory to `site`.
+
+The tab icon is the newest month's No. 1 album cover; `site/favicon.svg` is the
+fallback when that album has no picture.
 
 
 ## Adding a new month
