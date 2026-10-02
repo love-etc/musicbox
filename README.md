@@ -55,6 +55,24 @@ On Cloudflare Pages: connect the repo, leave the build command empty (or use
 `node scripts/build.mjs`) and set the output directory to `site`.
 
 
+## Adding a new month
+
+When a new Replay month comes out (e.g. October 2026):
+
+1. Add `data/charts/2026-10.json` in the format below: Replay's lists in order,
+   minutes for artists and albums, plays for songs. Paste the month's total minutes
+   into `total` if you have it.
+2. Optionally add artwork for new entries to `data/images.json` (songs use their
+   album's cover once the song is listed under its album in `data/tracks.json`).
+3. Run `npm run build && npm run verify`, check `site/index.html`, commit, push.
+
+Nothing else changes: the new month tab, moves, peaks, year-to-date and library
+totals all update by themselves. When Replay's full-year lists come out, add
+`data/replay/2026.json` like the other years.
+
+If Cloudflare Pages' build command is `node scripts/build.mjs`, it rebuilds
+`site/data.js` on every push, so forgetting step 3's build doesn't matter.
+
 ## Month files
 
 ```json

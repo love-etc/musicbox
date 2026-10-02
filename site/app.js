@@ -53,10 +53,14 @@
     if (url) IMG.set(type + '|' + C.norm(title) + (type === 'artist' ? '' : '|' + C.norm(artist)), url);
   });
   const imgFor = (cat, key) => {
-    const u = IMG.get(TYPE[cat] + '|' + key);
-    if (u || cat !== 'songs') return u || '';
-    const s = X.H.songs.get(key);                       // songs fall back to their album's cover
-    return s && s.album ? IMG.get('album|' + s.album.key) || '' : '';
+    // Songs use their album's cover when we know the album (data/tracks.json),
+    // so every song from one album looks the same; their own picture is only a fallback
+    if (cat === 'songs') {
+      const s = X.H.songs.get(key);
+      const albumImg = s && s.album ? IMG.get('album|' + s.album.key) : '';
+      if (albumImg) return albumImg;
+    }
+    return IMG.get(TYPE[cat] + '|' + key) || '';
   };
 
   // ---- State (mirrored in the URL hash) ----
@@ -615,6 +619,14 @@
       : sameMonth && byMonth.has(sameMonth) ? sameMonth : defaultView(y) });
   });
   window.addEventListener('hashchange', () => { const was = state.view + state.key; readHash(); render(); if (!isChartView() && was !== state.view + state.key) window.scrollTo(0, 0); });
+  // The title always leads to the newest month's songs chart
+  const HOME = `#/${LAST.month}/songs`;
+  $('home').href = HOME;
+  $('home').addEventListener('click', ev => {
+    ev.preventDefault();
+    go({ year: LAST.year, view: LAST.month, cat: 'songs', key: null });
+    window.scrollTo(0, 0);
+  });
   readHash();
   renderNotes();
   render();
