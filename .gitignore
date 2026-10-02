@@ -1,0 +1,6 @@
+# raw screenshots (source material, not part of the site)
+apple music data/
+# scratch copies used while transcribing
+.work/
+.DS_Store
+node_modules/

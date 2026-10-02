@@ -1,0 +1,11 @@
+{
+  "name": "musicbox",
+  "private": true,
+  "description": "Splinter's monthly music charts, built from Apple Music Replay and Last.fm",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "verify": "node scripts/verify.mjs",
+    "serve": "python3 -m http.server 8000 --directory site"
+  }
+}

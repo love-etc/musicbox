@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splinter’s Charts</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="mast">
+  <div class="in">
+    <div>
+      <div class="kicker">Splinter’s</div>
+      <h1>Monthly Charts</h1>
+    </div>
+    <div class="side">
+      <label class="year">
+        <span>Year</span>
+        <select id="year" aria-label="Year"></select>
+      </label>
+      <div class="who" id="who"></div>
+    </div>
+  </div>
+</header>
+<nav class="bar" id="bar" aria-label="Choose a chart"><div class="in" id="months"></div></nav>
+
+<main class="wrap">
+  <section aria-live="polite">
+    <div class="head">
+      <div>
+        <div class="eyebrow" id="eyebrow"></div>
+        <h2 id="title"></h2>
+      </div>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="cats" id="cats" role="group" aria-label="Chart type"></div>
+    <div id="chart"></div>
+  </section>
+
+  <h3 class="sec" id="glanceH"></h3>
+  <p class="hint" id="glanceHint"></p>
+  <div class="glance-wrap"><table class="glance" id="glance"></table></div>
+
+  <footer class="notes" id="notes"></footer>
+</main>
+
+<script src="data.js"></script>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
