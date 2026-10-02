@@ -206,8 +206,9 @@ detail page if they never charted, with zero chart appearances and no award rank
 They follow the same library size limit as other albums.
 
 `excludeAlbums` takes `"Title — Artist"` entries. It currently excludes
-**Angst**, **everything i wanted**, **Beautiful Ghosts**, **Hot Girl Summer** and
-**Tubes chansons française** from album lists, including monthly, year-end,
+**Angst**, **everything i wanted**, **Beautiful Ghosts**, **Hot Girl Summer**,
+**Tubes chansons française**, **À quoi je sers** and **Plus grandir (Best Of 1986 / 1996)**
+from album lists, including monthly, year-end,
 all-time, library and awards views. Song entries and artist minutes remain. Raw month files are kept
 intact; add or change rules here and rebuild to apply them.
 

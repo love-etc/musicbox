@@ -5,7 +5,9 @@
     "everything i wanted — Billie Eilish",
     "Beautiful Ghosts — Taylor Swift",
     "Hot Girl Summer (feat. Nicki Minaj & Ty Dolla $ign) — Megan Thee Stallion",
-    "Tubes chansons française — Mylène Farmer"
+    "Tubes chansons française — Mylène Farmer",
+    "À quoi je sers — Mylène Farmer",
+    "Plus grandir (Best Of 1986 / 1996) — Mylène Farmer"
   ],
   "groups": [
     {
@@ -32,6 +34,11 @@
       "title": "Poster Girl",
       "artist": "Zara Larsson",
       "releases": ["Love Me Land"]
+    },
+    {
+      "title": "WOR$T GIRL IN AMERICA",
+      "artist": "Slayyyter",
+      "releases": ["DANCE..."]
     },
     {
       "title": "Era 1",
