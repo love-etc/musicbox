@@ -353,3 +353,11 @@ a.lnk:hover { color: var(--blue); text-decoration: underline; text-underline-off
   .award-entry.winner .art { width: 42px; height: 42px; }
   .award-entry.winner .award-value { font-size: 26px; }
 }
+
+/* Chart history: boxes and graph dots open that month's chart */
+[data-jump] { cursor: pointer; }
+.cell .b.on[data-jump]:hover { filter: brightness(1.15); box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
+.lc .dot[data-jump]::after { content: ''; position: absolute; inset: -7px; border-radius: 50%; }
+.lc .dot[data-jump]:hover { transform: scale(1.35); background: var(--blue); }
+.row.flash { animation: flash 1.8s ease-out; }
+@keyframes flash { 0%, 35% { box-shadow: inset 4px 0 0 var(--blue); background: var(--blue-tint); } 100% { box-shadow: inset 0 0 0 transparent; } }

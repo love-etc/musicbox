@@ -146,6 +146,18 @@
   const rankColor = r => { const t = (r - 1) / (C.CHART_SIZE - 1); return `hsl(${224 - t * 8} ${80 - t * 25}% ${30 + t * 32}%)`; };
 
   // ---- Chart history (used in drop-downs and on detail pages) ----
+  // Chart-history boxes and graph dots open that month's chart, scrolled to the entry
+  const jumpAttrs = (m, h) => `data-jump="${esc(m.month + '|' + h.cat + '|' + h.key)}" role="link" tabindex="0" aria-label="${esc(monthLabel(m))}: No. ${h.ranks[m.i].rank}"`;
+  function jumpTo(month, cat, key) {
+    const m = byMonth.get(month); if (!m) return;
+    const id = `${month}|${cat}|${key}`;
+    open.add(id);
+    go({ year: m.year, view: month, cat, key: null });
+    const row = [...document.querySelectorAll('.row[data-id]')].find(r => r.dataset.id === id);
+    if (!row) { window.scrollTo(0, 0); return; }
+    row.scrollIntoView({ block: 'center' });
+    row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+  }
   function lineChart(h) {
     const a = h.first, b = Math.max(h.last, a), n = b - a, Hh = 110;
     const xp = i => (n === 0 ? 50 : (i - a) / n * 100);
@@ -160,15 +172,15 @@
     if (seg.length) segs.push(seg);
     const lines = segs.filter(s => s.length > 1).map(s => `<polyline points="${s.map(p => p.join(',')).join(' ')}" fill="none" stroke="#1543d6" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`).join('');
     let dots = '';
-    for (let i = a; i <= b; i++) { const p = h.ranks[i]; if (p) dots += `<i class="dot${p.rank === 1 ? ' one' : ''}" style="left:${xp(i)}%;top:${y(p.rank)}px" title="${esc(shortLabel(M[i]))}: No. ${p.rank}"></i>`; }
-    return `<div class="lc" role="img" aria-label="Chart position by month">${grid}<div class="plot">${ticks.join('')}<svg viewBox="0 0 100 ${Hh}" preserveAspectRatio="none">${lines}</svg>${dots}</div></div>`;
+    for (let i = a; i <= b; i++) { const p = h.ranks[i]; if (p) dots += `<i class="dot${p.rank === 1 ? ' one' : ''}" style="left:${xp(i)}%;top:${y(p.rank)}px" title="${esc(shortLabel(M[i]))}: No. ${p.rank}" ${jumpAttrs(M[i], h)}></i>`; }
+    return `<div class="lc" role="group" aria-label="Chart position by month">${grid}<div class="plot">${ticks.join('')}<svg viewBox="0 0 100 ${Hh}" preserveAspectRatio="none">${lines}</svg>${dots}</div></div>`;
   }
   function yearCells(h, y) {
     let cells = '';
     for (let mo = 0; mo < 12; mo++) {
       const m = byMonth.get(ym(y, mo)), p = m && h.ranks[m.i];
       cells += `<div class="cell"><div class="m">${MON[mo]}</div>` +
-        (p ? `<div class="b on" style="background:${rankColor(p.rank)}">${p.rank}</div><div class="u">${fmt(p.val)} ${UNIT[h.cat]}</div>`
+        (p ? `<div class="b on" style="background:${rankColor(p.rank)}" title="Open the ${esc(monthLabel(m))} chart" ${jumpAttrs(m, h)}>${p.rank}</div><div class="u">${fmt(p.val)} ${UNIT[h.cat]}</div>`
            : `<div class="b${m ? '' : ' gap'}"${m ? '' : ' title="No chart this month"'}>${m ? '–' : ''}</div><div class="u"></div>`) + `</div>`;
     }
     return `<div class="hist" style="--n:12">${cells}</div>`;
@@ -758,6 +770,15 @@
       : sameMonth && byMonth.has(sameMonth) ? sameMonth : defaultView(y) });
   });
   window.addEventListener('hashchange', () => { const was = state.view + state.key; readHash(); render(); if (!isChartView() && was !== state.view + state.key) window.scrollTo(0, 0); });
+  const jumpFrom = ev => {
+    const el = ev.target.closest && ev.target.closest('[data-jump]'); if (!el) return false;
+    ev.preventDefault(); ev.stopPropagation();
+    const [month, cat, ...key] = el.dataset.jump.split('|');
+    jumpTo(month, cat, key.join('|'));
+    return true;
+  };
+  document.addEventListener('click', jumpFrom, true);
+  document.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') jumpFrom(ev); }, true);
   // The title always leads to the newest month's songs chart
   const HOME = `#/${LAST.month}/songs`;
   $('home').href = HOME;
