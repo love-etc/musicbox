@@ -1,0 +1,56 @@
+{
+  "_comment": "Group standalone releases into albums before ranking. Titles in a group belong to its artist. Exclusions affect albums only; song and artist listening stays intact.",
+  "excludeAlbums": [
+    "Angst — Loredana",
+    "everything i wanted — Billie Eilish",
+    "Beautiful Ghosts — Taylor Swift",
+    "Hot Girl Summer (feat. Nicki Minaj & Ty Dolla $ign) — Megan Thee Stallion",
+    "Tubes chansons française — Mylène Farmer"
+  ],
+  "groups": [
+    {
+      "title": "Head Above Water",
+      "artist": "Avril Lavigne",
+      "releases": ["Tell Me It's Over", "Dumb Blonde (feat. Nicki Minaj)"]
+    },
+    {
+      "title": "In A Dream",
+      "artist": "Troye Sivan",
+      "releases": ["Take Yourself Home", "Easy", "Rager teenager!"]
+    },
+    {
+      "title": "Disco",
+      "artist": "Kylie Minogue",
+      "releases": ["Say Something"]
+    },
+    {
+      "title": "Tension",
+      "artist": "Kylie Minogue",
+      "releases": ["Extension (The Extended Mixes)"]
+    },
+    {
+      "title": "Poster Girl",
+      "artist": "Zara Larsson",
+      "releases": ["Love Me Land"]
+    },
+    {
+      "title": "Era 1",
+      "artist": "Kim Petras",
+      "kind": "Singles collection",
+      "source": "https://en.wikipedia.org/wiki/Era_1",
+      "releases": [
+        "I Don't Want It at All",
+        "Hills",
+        "Hillside Boys",
+        "Slow It Down",
+        "Faded",
+        "Heart to Break",
+        "Can't Do Better",
+        "All the Time",
+        "1,2,3 dayz up (feat. SOPHIE)",
+        "Homework",
+        "If U Think About Me…"
+      ]
+    }
+  ]
+}

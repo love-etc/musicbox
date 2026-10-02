@@ -91,7 +91,10 @@
     const [a, b, c] = parts;
     if (a === 'library') { state = { ...state, view: 'library', cat: CATS.includes(b) ? b : 'albums', key: null }; return; }
     if (a === 'awards') { state = { ...state, view: 'awards', cat: CATS.includes(b) ? b : 'songs', key: null }; return; }
-    if (a === 'album' || a === 'artist' || a === 'song') { state = { ...state, view: a, key: parts.slice(1).join('/') }; return; }
+    if (a === 'album' || a === 'artist' || a === 'song') {
+      const key = parts.slice(1).join('/');
+      state = { ...state, view: a, key: a === 'album' ? X.albumRedirects.get(key) || key : key }; return;
+    }
     if (a === 'all-time') { state = { year: 'all', view: 'all-time', cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
     if (/^\d{4}-\d{2}$/.test(a) && byMonth.has(a)) { state = { year: +a.slice(0, 4), view: a, cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
     if (/^\d{4}$/.test(a) && allYears.includes(+a)) {
@@ -129,7 +132,15 @@
     const img = url ? `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
     return `<div class="art${round ? ' round' : ''}${cls ? ' ' + cls : ''}" style="background:hsl(${hue} ${sat}% ${light}%)" aria-hidden="true">${esc(letter)}${img}</div>`;
   }
-  const tileFor = (cat, h, cls) => tile(cat === 'artists' ? h.title : h.artist, h.title, cat === 'artists', imgFor(cat, h.key), cls);
+  const tileFor = (cat, h, cls = '') => {
+    const collection = cat === 'albums' && X.collections.get(h.key);
+    const url = imgFor(cat, h.key);
+    if (collection && !url) {
+      const covers = [...new Set(collection.releases.map(title => imgFor('songs', C.norm(title) + '|' + C.norm(collection.artist))).filter(Boolean))].slice(0, 4);
+      if (covers.length === 4) return `<div class="art mosaic ${cls}" aria-hidden="true">${covers.map(url => `<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`).join('')}</div>`;
+    }
+    return tile(cat === 'artists' ? h.title : h.artist, h.title, cat === 'artists', url, cls);
+  };
   function moveCell(mv) {
     switch (mv && mv.kind) {
       case 'up': return `<span class="up" aria-label="up ${mv.n}"><i class="tri u"></i>${mv.n}</span>`;
@@ -241,15 +252,16 @@
     }));
   }
   function rowHtml({ cat, id, rank, mvHtml, e, h, flag, inline, c1, c2, c3, val, unit, plain }) {
-    const isArtist = cat === 'artists', expandable = !!h;
+    const expandable = !!h;
     const isOpen = expandable && open.has(id);
     if (expandable) panelData.set(id, { cat, h, id });
-    const title = expandable ? `<a class="lnk" href="${pageHref(cat, h.key)}">${esc(e.title)}</a>` : esc(e.title);
+    const hasPage = expandable || (cat === 'albums' && X.albumPages.has(e.key));
+    const title = hasPage ? `<a class="lnk" href="${pageHref(cat, e.key)}">${esc(e.title)}</a>` : esc(e.title);
     return `
       <div class="row${rank === 1 && !plain ? ' top' : ''}${expandable ? '' : ' static'}"${expandable ? ` role="button" tabindex="0" aria-expanded="${isOpen}"` : ''} data-id="${esc(id)}">
         <div class="rank">${rank}</div>
         <div class="mv">${mvHtml}</div>
-        ${tile(isArtist ? e.title : e.artist, e.title, isArtist, imgFor(cat, e.key))}
+        ${tileFor(cat, e)}
         <div class="name">
           ${flag ? `<span class="flag">${flag}</span>` : ''}
           <div class="t">${title}</div>
@@ -346,12 +358,12 @@
     return `<a class="card${cat === 'artists' ? ' round' : ''}" href="${pageHref(cat, h.key)}" data-q="${esc((h.title + ' ' + (h.artist || '')).toLowerCase())}">
       <div class="cv">${tileFor(cat, h)}${rank ? `<span class="badge">${rank}</span>` : ''}</div>
       <div class="ct">${esc(h.title)}</div>${sub}
-      <div class="cm">${fmt(h.total || 0)} ${UNIT[cat]} · peak ${pk(h.peak)}</div></a>`;
+      <div class="cm">${fmt(h.total || 0)} ${UNIT[cat]} · ${h.months ? 'peak ' + pk(h.peak) : 'not charted'}</div></a>`;
   };
   const listRows = (list, prefix, cat) => list.map((h, i) => rowHtml({
-    cat, id: `${prefix}|${cat}|${h.key}`, rank: i + 1, mvHtml: '', e: h, h, flag: '',
-    inline: `PEAK ${pk(h.peak)} · ${h.months} MO${h.months === 1 ? '' : 'S'}${h.no1 ? ` · ${h.no1}× NO. 1` : ''}`,
-    c1: pk(h.peak), c2: h.months, c3: h.no1 || '–', val: fmt(h.total || 0), unit: UNIT[cat], plain: true
+    cat, id: `${prefix}|${cat}|${h.key}`, rank: i + 1, mvHtml: '', e: h, h: h.months ? h : null, flag: '',
+    inline: h.months ? `PEAK ${pk(h.peak)} · ${h.months} MO${h.months === 1 ? '' : 'S'}${h.no1 ? ` · ${h.no1}× NO. 1` : ''}` : 'NOT CHARTED',
+    c1: h.months ? pk(h.peak) : '–', c2: h.months, c3: h.no1 || '–', val: fmt(h.total || 0), unit: UNIT[cat], plain: true
   })).join('');
 
   // All library categories share sortable columns (or chips on phones).
@@ -409,7 +421,7 @@
       ? rankedList(list, 'lib', cat)
       : `<div class="cards">${sortList({ list, ...prefs }).map((h, i) => cardHtml(cat, h, i + 1)).join('')}</div>`;
     return `<div class="head"><div><div class="eyebrow">Library · Top ${fmt(list.length)} by known ${UNIT_LONG[cat]}</div><h2>${CATNAME[cat]}</h2></div>
-        <div class="meta"><b>${fmt(list.length)} of ${fmt(X.library[cat].length)} charted ${cat}</b><br>Every month + Apple’s year totals</div></div>
+        <div class="meta"><b>${fmt(list.length)} of ${fmt(X.library[cat].length)} ${cat}</b><br>Every month + Apple’s year totals</div></div>
       <div class="library-tools"><div class="filter"><input id="q" type="search" placeholder="Filter ${CATNAME[cat].toLowerCase()}…" value="${esc(libFilter)}" aria-label="Filter ${cat}"></div>
         ${cat !== 'songs' ? `<div class="view-toggle" role="group" aria-label="Library layout"><button type="button" data-layout="grid" aria-pressed="${prefs.layout === 'grid'}">▦ Grid</button><button type="button" data-layout="list" aria-pressed="${prefs.layout === 'list'}">☷ List</button></div>` : ''}</div>
       <p class="library-status" id="library-status" role="status"></p>
@@ -420,10 +432,10 @@
     let visible = 0, count = 0;
     document.querySelectorAll('#page .card').forEach(c => { c.hidden = !!q && !c.dataset.q.includes(q); count++; if (!c.hidden) visible++; });
     document.querySelectorAll('#page .ranked-list .row').forEach(r => {
-      const h = panelData.get(r.dataset.id); if (!h) return;
-      const hit = !q || (h.h.title + ' ' + h.h.artist).toLowerCase().includes(q);
+      const name = [...r.querySelectorAll('.name .t, .name .a')].map(el => el.textContent).join(' ').toLowerCase();
+      const hit = !q || name.includes(q);
       r.hidden = !hit; count++; if (hit) visible++;
-      r.nextElementSibling.hidden = !hit || r.getAttribute('aria-expanded') !== 'true';
+      if (r.nextElementSibling?.classList.contains('panel')) r.nextElementSibling.hidden = !hit || r.getAttribute('aria-expanded') !== 'true';
     });
     $('library-empty').hidden = visible > 0;
     const prefs = libPrefs[state.cat];
@@ -499,14 +511,19 @@
   const histData = new Map();
 
   function renderAlbum(key) {
-    const h = X.H.albums.get(key);
+    const h = X.albumPages.get(key);
     if (!h) return notFound('album');
-    histData.set('alb|' + key, h);
+    if (h.months) histData.set('alb|' + key, h);
     const songs = h.songs || [];
     const more = X.splitCredits(h.artist).flatMap(n => (X.artists.get(C.norm(n)) || { albums: [] }).albums).filter((a, i, arr) => a !== h && arr.indexOf(a) === i);
     document.title = `${h.title} – ${h.artist} · ${SITE}`;
-    return hero('albums', h, `Album`, artistLinks(h.artist))
-      + histSection(h, 'alb|' + key)
+    const kind = X.collections.get(key)?.kind || 'Album';
+    const intro = h.months ? hero('albums', h, kind, artistLinks(h.artist))
+      : `<div class="hero">${tileFor('albums', h, 'big')}<div class="info"><div class="eyebrow">${esc(kind)}</div><h2>${esc(h.title)}</h2><div class="by">${artistLinks(h.artist)}</div>
+          <div class="facts collection-facts">${factBox('Total', `${fmt(h.total)}<small>min</small>`, 'known listening')}${factBox('Months on chart', 0, 'not charted')}${factBox('Library', 'No. ' + h.libRank, 'ranked by minutes')}</div>${byYearText(h, 'albums')}
+          <p class="hint">This collection has not reached the monthly top ${C.CHART_SIZE}. Listening totals combine its standalone releases.</p></div></div>`;
+    return intro
+      + (h.months ? histSection(h, 'alb|' + key) : '')
       + `<h3 class="sec">Charted songs</h3>`
       + (songs.length ? rankedList(songs, 'alb' + key)
                       : `<p class="hint">No songs from this album made the monthly top ${C.CHART_SIZE} (or they’re not matched yet: see data/tracks.json).</p>`)
@@ -572,7 +589,8 @@
       const feats = a.songs.some(s => C.norm(s.artist) !== a.key);
       parts.push(`<h4>Songs${feats ? ' <small>incl. features</small>' : ''}</h4>${entryAchievements(a.songs, 'songs')}`);
     }
-    if (a.albums.length) parts.push(`<h4>Albums</h4>${entryAchievements(a.albums, 'albums')}`);
+    const chartedAlbums = a.albums.filter(h => h.months);
+    if (chartedAlbums.length) parts.push(`<h4>Albums</h4>${entryAchievements(chartedAlbums, 'albums')}`);
     return parts.length ? `<h3 class="sec">Achievements</h3><div class="ach">${parts.join('')}</div>` : '';
   }
 

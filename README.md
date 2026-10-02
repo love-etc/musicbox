@@ -35,10 +35,13 @@ data/
   images.json           [type, title, artist, imageUrl] rows for artwork
   aliases.json          renames so histories join up (optional)
   tracks.json           which charted songs are on which charted album
+  releases.json         singles grouped into albums, and album exclusions
+  collection-listening.json  collection minutes recovered from raw playback
 scripts/
   build.mjs             bundles data/ into site/data.js
   import-spotify.mjs    Spotify export -> data/spotify/
   import-deezer.mjs     Deezer export -> data/deezer/
+  reconstruct-collections.mjs  recover collection listening below saved top lists
   lib/history.mjs       shared by the two importers
   verify.mjs            checks moves, peaks and months-on-chart
 site/
@@ -174,6 +177,61 @@ lands on the wrong album, then rebuild:
 ```
 
 Use `"Song — Artist"` when the song's credit differs from the album artist.
+
+### Grouping single releases
+
+`data/releases.json` groups separately listed singles into their parent albums,
+or into a collection such as Kim Petras’ **Era 1**. Each group has a `title`,
+an `artist`, and a list of release titles from that artist. Matching ignores case,
+punctuation and parenthesized edition/feature labels, like the existing charts.
+
+The supplied groups fold Avril Lavigne’s “Tell Me It's Over” and “Dumb Blonde” into
+**Head Above Water**, and Troye Sivan’s “Take Yourself Home”, “Easy” and
+“Rager teenager!” into **In A Dream**. Kylie Minogue’s “Say Something” becomes
+**Disco**, **Extension** joins **Tension**, and Zara Larsson’s “Love Me Land”
+joins **Poster Girl**. Era 1 uses the
+[eleven 2017–2019 singles](https://en.wikipedia.org/wiki/Era_1).
+
+Grouped monthly minutes are added before choosing the top 15, so positions,
+chart histories, awards, and library totals are recalculated together. For each
+original release, annual listening uses the higher of Apple’s monthly sum or
+its full-year Replay total, plus other services; only then are releases combined.
+This preserves single-release minutes even when the parent album has a Replay
+total. Existing single-album page links redirect to the group. Song charts and
+artist listening are unaffected. `tracks.json` still controls which songs appear
+on an album’s page; collections use their own artwork when available, with a
+mosaic of their single artwork as a fallback.
+Explicit singles collections with known listening also get a library entry and
+detail page if they never charted, with zero chart appearances and no award ranks.
+They follow the same library size limit as other albums.
+
+`excludeAlbums` takes `"Title — Artist"` entries. It currently excludes
+**Angst**, **everything i wanted**, **Beautiful Ghosts**, **Hot Girl Summer** and
+**Tubes chansons française** from album lists, including monthly, year-end,
+all-time, library and awards views. Song entries and artist minutes remain. Raw month files are kept
+intact; add or change rules here and rebuild to apply them.
+
+### Reconstructing collection history
+
+Era 1’s album history combines its singles’ recorded Spotify playback, including
+listening that fell below the saved monthly top 50. To refresh it from the local
+extended-history export after changing its track list or importing more months:
+
+```sh
+node scripts/reconstruct-collections.mjs "spotify data"
+npm run build && npm run verify
+```
+
+Only Spotify months already imported into `data/spotify/` are covered. Streams
+are deduplicated, bucketed in São Paulo time and rounded to minutes per single
+per month. Feature-credit variants match, but live versions and remixes do not.
+`data/collection-listening.json` contains only aggregate music totals; raw
+timestamps, identifiers and account details stay local. Its entries replace the
+matching source’s existing single totals before grouping, so they are never
+counted twice. Other services keep their existing totals; missing listening on
+those services is not estimated. Collections use the same presentation as other
+albums. Their updated chart positions also feed year-end, all-time and awards
+calculations.
 
 ## Aliases
 

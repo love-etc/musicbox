@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { reconstructCollections } from './reconstruct-collections.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Load the two browser scripts the same way the page does
 const window = {};
@@ -85,5 +86,98 @@ for (const cat of C.CATS) {
 }
 const empty = C.build({ months: [] });
 for (const cat of C.CATS) assert.ok(Object.values(empty.awards[cat]).every(rows => rows.length === 0));
-console.log(bad ? `${bad} problem(s)` : `OK: ${X.M.length} months checked, positions continue across ${X.years.join(', ')}; year-end method: ${C.YEAR_END_METHOD}; awards, ties and calendar streaks verified`);
+
+// Album grouping happens before ranks, but annual totals are reconciled per release.
+const releaseFixture = {
+  releases: { excludeAlbums: ['Excluded — Test Artist'], groups: [
+    { title: 'Album', artist: 'Test Artist', releases: ['Single'] }
+  ] },
+  months: [
+    fixtureMonth('2024-01', [['Excluded', 400], ['Rival', 120], ['Album', 100], ['Single', 30]]),
+    fixtureMonth('2024-01', [['Album', 20], ['Single', 5]], 'spotify'),
+    fixtureMonth('2024-02', [['Album', 200], ['Single', 40]])
+  ],
+  replay: { 2024: { albums: [['Excluded', 'Test Artist', 1000], ['Rival', 'Test Artist', 550], ['Album', 'Test Artist', 500], ['Single', 'Test Artist', 90]] } },
+  tracks: { 'Single — Test Artist': ['Single'] }
+};
+const grouped = C.build(releaseFixture), albumKey = 'album|testartist';
+assert.deepEqual(grouped.M[0].data.albums.map(e => [e.title, e.val, e.rank]), [['Album', 155, 1], ['Rival', 120, 2]]);
+assert.equal(grouped.H.albums.get(albumKey).months, 2);
+assert.equal(grouped.T.albums.get(albumKey).total, 615, '500 + 90 annual minutes plus 25 Spotify minutes');
+assert.deepEqual(grouped.replay[2024].albums.map(e => [e.title, e.val, e.rank]), [['Album', 590, 1], ['Rival', 550, 2]]);
+assert.equal(grouped.H.songs.get('single|testartist').album.key, albumKey);
+assert.equal(grouped.albumRedirects.get('single|testartist'), albumKey);
+assert.ok(!grouped.T.albums.has('excluded|testartist'));
+assert.ok(!grouped.H.albums.has('single|testartist'));
+const withoutSingleReplay = structuredClone(releaseFixture);
+withoutSingleReplay.replay[2024].albums.pop();
+assert.equal(C.build(withoutSingleReplay).T.albums.get(albumKey).total, 595,
+  'Album Replay must not swallow 70 monthly single minutes + 25 Spotify minutes');
+
+// Removing an ineligible single fills the open chart slot; it does not leave a gap.
+const refill = C.build({ releases: releaseFixture.releases,
+  months: [fixtureMonth('2024-01', [['Excluded', 1000], ...Array.from({ length: 16 }, (_, i) => ['Entry ' + i, 100 - i])])] });
+assert.equal(refill.M[0].data.albums.length, C.CHART_SIZE);
+assert.equal(refill.M[0].data.albums.at(-1).title, 'Entry 14');
+
+const collectionMonth = fixtureMonth('2024-01', [...Array.from({ length: 16 }, (_, i) => ['Entry ' + i, 100 - i]), ['Single', 1]]);
+collectionMonth.songs = [['Single', 'Test Artist', 5]];
+const unchartedCollection = C.build({
+  releases: { groups: [{ title: 'Collection', artist: 'Test Artist', kind: 'Singles collection', releases: ['Single'] }] },
+  months: [collectionMonth], tracks: { 'Collection — Test Artist': ['Single'] }
+});
+const collectionKey = 'collection|testartist';
+assert.equal(unchartedCollection.albumPages.get(collectionKey).months, 0);
+assert.equal(unchartedCollection.albumPages.get(collectionKey).total, 1);
+assert.ok(unchartedCollection.library.albums.some(h => h.key === collectionKey));
+assert.ok(!unchartedCollection.H.albums.has(collectionKey), 'Uncharted collections must not gain fake chart history');
+assert.ok(Object.values(unchartedCollection.awards.albums).every(rows => rows.every(r => r.h.key !== collectionKey)));
+assert.equal(unchartedCollection.H.songs.get('single|testartist').album.key, collectionKey);
+
+// Recover actual playback, including short streams, without doubling exported duplicates.
+const collectionGroup = { title: 'Collection', artist: 'Test Artist', kind: 'Singles collection', releases: ['Single', 'B-side'] };
+const stream = (ts, title, ms = 60000, artist = 'Test Artist') => ({
+  ts, master_metadata_track_name: title, master_metadata_album_artist_name: artist,
+  ms_played: ms, spotify_track_uri: 'test:' + title
+});
+const sample = stream('2024-02-01T01:00:00Z', 'Single'); // Still January in São Paulo.
+const recovered = reconstructCollections([collectionGroup], new Set(['2024-01']), [
+  sample, { ...sample }, stream('2024-01-12T12:00:00Z', 'Single (feat. Guest)', 120000),
+  stream('2024-01-13T12:00:00Z', 'B-side', 20000), stream('2024-01-13T12:01:00Z', 'B-side', 20000),
+  stream('2024-01-14T12:00:00Z', 'Single - Recorded at Spotify Studios NYC'),
+  stream('2024-01-14T12:00:00Z', 'Single (Remix)'), stream('2024-01-15T12:00:00Z', 'Single', 60000, 'Other Artist'),
+  stream('2024-02-02T12:00:00Z', 'Single'), stream('2024-01-16T12:00:00Z', 'Single', -10000)
+]);
+assert.deepEqual(recovered.months, [{ month: '2024-01', source: 'spotify', albums: [
+  ['Single', 'Test Artist', 3], ['B-side', 'Test Artist', 1]
+] }]);
+const reconstructionFixture = {
+  releases: { groups: [collectionGroup] }, collectionListening: recovered,
+  months: [fixtureMonth('2024-01', [['Rival', 4], ['Single', 1]], 'spotify'), fixtureMonth('2024-01', [['Single', 2]])]
+};
+const reconstructed = C.build(reconstructionFixture);
+assert.deepEqual(reconstructed.M[0].data.albums.map(e => [e.title, e.val]), [['Collection', 6], ['Rival', 4]],
+  'Replace partial Spotify minutes, add missing singles, and preserve Apple minutes before ranking');
+assert.equal(reconstructed.T.albums.get(collectionKey).total, 6, 'Recovered minutes must not be counted twice');
+const unrecovered = C.build({ ...reconstructionFixture, collectionListening: {} });
+for (const cat of ['songs', 'artists']) {
+  assert.deepEqual(reconstructed.M[0].data[cat], unrecovered.M[0].data[cat], `${cat} must not change during collection recovery`);
+}
+
+const original = C.build({ ...window.MUSICBOX, releases: {} });
+const beforeRecovery = C.build({ ...window.MUSICBOX, releases: {}, collectionListening: {} });
+for (const cat of ['songs', 'artists']) {
+  const history = db => db.M.map(m => m.data[cat].map(e => [e.key, e.val, e.rank, e.peak, e.months]));
+  const totals = db => [...db.T[cat].values()].map(t => [t.key, t.total]);
+  assert.deepEqual(history(X), history(beforeRecovery), `${cat} charts must stay unchanged by album rules and recovery`);
+  assert.deepEqual(totals(X), totals(beforeRecovery), `${cat} listening must stay unchanged by album rules and recovery`);
+}
+for (const group of window.MUSICBOX.releases?.groups || []) {
+  const key = title => C.norm(title) + '|' + C.norm(group.artist);
+  const members = new Set([key(group.title), ...group.releases.map(key)]);
+  const expected = [...members].reduce((sum, k) => sum + (original.T.albums.get(k)?.total || 0), 0);
+  assert.equal(X.T.albums.get(key(group.title))?.total, expected, `${group.title}: preserve all member listening`);
+  for (const member of members) if (member !== key(group.title)) assert.ok(!X.T.albums.has(member));
+}
+console.log(bad ? `${bad} problem(s)` : `OK: ${X.M.length} months checked; chart history, awards, calendar streaks, release groups and listening totals verified`);
 process.exit(bad ? 1 : 0);

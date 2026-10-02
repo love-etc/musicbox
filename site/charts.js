@@ -50,13 +50,48 @@
       const i = v.lastIndexOf(' — ');
       return i < 0 ? [v, a] : [v.slice(0, i), v.slice(i + 3)];
     };
+    const releaseKey = (title, artist) => norm(title) + '|' + norm(artist);
+    const albumGroups = new Map(), albumRedirects = new Map(), collections = new Map();
+    (DB.releases?.groups || []).forEach(group => {
+      const [title, artist] = rename('albums', group.title, artistName(group.artist));
+      const key = releaseKey(title, artist);
+      if (group.kind) collections.set(key, { ...group, title, artist });
+      group.releases.forEach(name => {
+        const [t, a] = rename('albums', name, artist);
+        const from = releaseKey(t, a);
+        albumGroups.set(from, { title, artist, key });
+        albumRedirects.set(from, key);
+      });
+    });
+    const excludedAlbums = new Set((DB.releases?.excludeAlbums || []).map(name => {
+      const i = name.lastIndexOf(' — ');
+      const [t, a] = rename('albums', name.slice(0, i), artistName(name.slice(i + 3)));
+      return releaseKey(t, a);
+    }));
+    function entry(cat, row) {
+      if (cat === 'artists') {
+        const title = artistName(row[0]);
+        return { title, artist: '', val: row[1], key: norm(title) };
+      }
+      const [title, artist] = rename(cat, row[0], artistName(row[1]));
+      const key = releaseKey(title, artist);
+      if (cat === 'albums' && excludedAlbums.has(key)) return null;
+      return { title, artist, val: row[2], key, releaseKey: key,
+        ...(cat === 'albums' ? albumGroups.get(key) : {}) };
+    }
     // Key every list entry (after renames), then merge months that have more than one
     // source (e.g. Apple Music + Spotify in the same month) by adding their numbers up.
-    const keyed = m => ({
-      songs: m.songs.map(([t, a, v]) => { [t, a] = rename('songs', t, artistName(a)); return { title: t, artist: a, val: v, key: norm(t) + '|' + norm(a) }; }),
-      albums: m.albums.map(([t, a, v]) => { [t, a] = rename('albums', t, artistName(a)); return { title: t, artist: a, val: v, key: norm(t) + '|' + norm(a) }; }),
-      artists: m.artists.map(([n, v]) => { n = artistName(n); return { title: n, artist: '', val: v, key: norm(n) }; })
-    });
+    const recoveredMonths = new Map((DB.collectionListening?.months || []).map(m => [m.source + '|' + m.month, m]));
+    const keyed = m => {
+      const full = Object.fromEntries(CATS.map(cat => [cat, m[cat].map(row => entry(cat, row)).filter(Boolean)]));
+      const recovered = recoveredMonths.get(m.source + '|' + m.month);
+      if (recovered) {
+        const entries = recovered.albums.map(row => entry('albums', row)).filter(Boolean);
+        const overrides = new Map(entries.map(e => [e.releaseKey, e]));
+        full.albums = [...full.albums.filter(e => !overrides.has(e.releaseKey)), ...overrides.values()];
+      }
+      return full;
+    };
     const RAW = DB.months.map(m => ({ ...m, full: keyed(m) }));   // one per source file, used for totals
     const byMonth = new Map();
     RAW.forEach(m => { if (!byMonth.has(m.month)) byMonth.set(m.month, []); byMonth.get(m.month).push(m); });
@@ -141,16 +176,27 @@
     CATS.forEach(cat => H[cat].forEach(h => { h.title = latestTitle(h, M, cat); }));
 
     // ---- Apple's own year-long Replay lists, keyed like the charts ----
-    const replay = {}, replayVal = {};
+    const replay = {}, replayVal = {}, replayReleaseVal = {};
     Object.entries(DB.replay || {}).forEach(([y, r]) => {
-      replay[y] = {}; replayVal[y] = {};
+      replay[y] = {}; replayVal[y] = {}; replayReleaseVal[y] = {};
       CATS.forEach(cat => {
         replayVal[y][cat] = new Map();
-        replay[y][cat] = (r[cat] || []).map((row, i) => {
-          let e;
-          if (cat === 'artists') { const n = artistName(row[0]); e = { title: n, artist: '', val: row[1], key: norm(n) }; }
-          else { const [t, a] = rename(cat, row[0], artistName(row[1])); e = { title: t, artist: a, val: row[2], key: norm(t) + '|' + norm(a) }; }
-          e.rank = i + 1; e.h = H[cat].get(e.key) || null;
+        const releases = replayReleaseVal[y][cat] = new Map();
+        let entries = (r[cat] || []).map(row => entry(cat, row)).filter(Boolean);
+        entries.forEach(e => {
+          const key = e.releaseKey || e.key;
+          if (!releases.has(key)) releases.set(key, e);
+        });
+        if (cat === 'albums') {
+          const grouped = new Map();
+          releases.forEach(e => {
+            if (grouped.has(e.key)) grouped.get(e.key).val += e.val;
+            else grouped.set(e.key, { ...e });
+          });
+          entries = [...grouped.values()].sort((a, b) => b.val - a.val);
+        }
+        replay[y][cat] = entries.map((e, i) => {
+          e = { ...e, rank: i + 1, h: H[cat].get(e.key) || null };
           if (!replayVal[y][cat].has(e.key)) replayVal[y][cat].set(e.key, e);
           return e;
         });
@@ -167,23 +213,29 @@
     const sourcesOf = y => [...new Set(RAW.filter(m => +m.month.slice(0, 4) === y).map(m => m.source))];
     const T = {};  // cat -> Map(key -> { key, title, artist, byYear: {y: value}, total, h })
     CATS.forEach(cat => {
-      const tm = new Map(); T[cat] = tm;
+      const tm = new Map(), components = new Map(); T[cat] = tm;
       const get = e => {
-        if (!tm.has(e.key)) tm.set(e.key, { key: e.key, title: e.title, artist: e.artist, monthly: {}, extra: {}, byYear: {}, total: 0, h: H[cat].get(e.key) || null });
-        return tm.get(e.key);
+        if (!tm.has(e.key)) tm.set(e.key, { key: e.key, title: e.title, artist: e.artist, byYear: {}, total: 0, h: H[cat].get(e.key) || null });
+        const key = e.releaseKey || e.key;
+        if (!components.has(key)) components.set(key, { key, parent: tm.get(e.key), monthly: {}, extra: {} });
+        return components.get(key);
       };
       // Apple's full-year Replay number already covers its monthly lists; other sources come on top
       RAW.forEach(m => {
         const y = +m.month.slice(0, 4), bucket = m.source === 'apple' ? 'monthly' : 'extra';
         m.full[cat].forEach(e => { const t = get(e); t[bucket][y] = (t[bucket][y] || 0) + e.val; });
       });
-      Object.keys(replay).forEach(y => replay[y][cat].forEach(e => get(e)));
-      tm.forEach(t => {
+      Object.keys(replay).forEach(y => replayReleaseVal[y][cat].forEach(e => get(e)));
+      // Reconcile Replay for each original release before combining a single with
+      // its album. Otherwise the album's annual total could swallow the single's minutes.
+      components.forEach(t => {
         allYears.forEach(y => {
-          const r = replayVal[y] && replayVal[y][cat].get(t.key);
+          const r = replayReleaseVal[y] && replayReleaseVal[y][cat].get(t.key);
           const v = Math.max(t.monthly[y] || 0, r ? r.val : 0) + (t.extra[y] || 0);
-          if (v) { t.byYear[y] = v; t.total += v; }
+          if (v) { t.parent.byYear[y] = (t.parent.byYear[y] || 0) + v; t.parent.total += v; }
         });
+      });
+      tm.forEach(t => {
         if (t.h) { t.title = t.h.title; t.artist = t.h.artist; t.h.total = t.total; t.h.byYear = t.byYear; }
       });
     });
@@ -242,10 +294,21 @@
       allTime[cat] = all.slice(0, ALL_TIME_SIZE);
     });
 
-    // ---- Library: everything that ever charted, ranked by listening totals ----
+    // Explicit collections also get a page when their singles never reached the
+    // monthly top. They have no invented ranks and remain outside chart history H.
+    const albumPages = new Map(H.albums);
+    collections.forEach((collection, key) => {
+      const t = T.albums.get(key);
+      if (t && !albumPages.has(key)) albumPages.set(key, {
+        key, cat: 'albums', title: t.title, artist: t.artist, total: t.total, byYear: t.byYear,
+        peak: 99, months: 0, no1: 0, points: 0, ranks: new Array(M.length).fill(null)
+      });
+    });
+
+    // ---- Library: charted entries and explicit collections, ranked by listening ----
     const library = {};
     CATS.forEach(cat => {
-      library[cat] = [...H[cat].values()].sort((a, b) => (b.total || 0) - (a.total || 0) || a.peak - b.peak || b.months - a.months);
+      library[cat] = [...(cat === 'albums' ? albumPages : H[cat]).values()].sort((a, b) => (b.total || 0) - (a.total || 0) || a.peak - b.peak || b.months - a.months);
       library[cat].forEach((h, i) => { h.libRank = i + 1; });
     });
 
@@ -277,7 +340,8 @@
       if (ak.startsWith('_')) return;
       const i = ak.lastIndexOf(' — ');
       const [at, aa] = rename('albums', ak.slice(0, i), artistName(ak.slice(i + 3)));
-      const album = H.albums.get(norm(at) + '|' + norm(aa));
+      const key = releaseKey(at, aa);
+      const album = albumPages.get(albumRedirects.get(key) || key);
       if (!album) return;
       album.songs = album.songs || [];
       songs.forEach(s => {
@@ -303,7 +367,7 @@
       return A.get(k);
     };
     H.artists.forEach(h => { const a = artistEntry(h.title); a.h = h; a.name = h.title; });
-    H.albums.forEach(h => splitCredits(h.artist).forEach(n => { const a = artistEntry(n); if (!a.albums.includes(h)) a.albums.push(h); }));
+    albumPages.forEach(h => splitCredits(h.artist).forEach(n => { const a = artistEntry(n); if (!a.albums.includes(h)) a.albums.push(h); }));
     H.songs.forEach(h => splitCredits(h.artist, h.title).forEach(n => { const a = artistEntry(n); if (!a.songs.includes(h)) a.songs.push(h); }));
     A.forEach(a => {
       a.albums.sort((x, y) => (y.total || 0) - (x.total || 0));
@@ -311,7 +375,7 @@
       a.total = a.h ? a.h.total : (T.artists.get(a.key) || {}).total || 0;
     });
 
-    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits };
+    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits, albumRedirects, collections, albumPages };
   }
 
   const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, LIBRARY_LIMITS, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, longestRun, build };
