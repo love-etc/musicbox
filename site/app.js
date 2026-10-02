@@ -18,7 +18,18 @@
   const ONE = { songs: 'song', albums: 'album', artists: 'artist' };
   const UNIT = { songs: 'plays', albums: 'min', artists: 'min' };
   const UNIT_LONG = { songs: 'plays', albums: 'minutes', artists: 'minutes' };
-  const SRC = { apple: 'Apple Music Replay', lastfm: 'Last.fm' };
+  const SRC = { apple: 'Apple Music Replay', deezer: 'Deezer', spotify: 'Spotify', lastfm: 'Last.fm' };
+  const ABBR = { deezer: 'DZ', spotify: 'SP', lastfm: 'LFM' };
+  const srcLabel = m => m.sources.map(s => SRC[s] || esc(s)).join(' + ');
+  // Month-bar tag for the odd months in an Apple year that don't come (only) from Apple:
+  // "+SP" adds Spotify to Apple, "SP" / "LFM" replaces it. Years before Apple get no tags
+  // (the chart header names the source).
+  const tagFor = m => {
+    if (m.source === 'apple') return '';
+    if (!M.some(x => x.year === m.year && x.sources.includes('apple'))) return '';
+    const t = m.sources.filter(s => s !== 'apple').map(s => ABBR[s] || esc(s)).join('+');
+    return `<span class="tag">${m.sources.includes('apple') ? '+' : ''}${t}</span>`;
+  };
   const LAST = M[M.length - 1], FIRST = M[0];
   // With Apple-style year-end charts the separate Replay tab would be a duplicate, so it only shows in 'points' mode
   const SHOW_REPLAY = C.YEAR_END_METHOD !== 'totals';
@@ -262,7 +273,7 @@
     const prev = m.i > 0 ? M[m.i - 1] : null;
     const total = m.total ? `<b>${fmt(m.total.value)} ${m.total.unit === 'min' ? 'minutes' : esc(m.total.unit)}</b><br>` : '';
     const gap = m.gapBefore ? `<br>Moves compare with ${esc(shortLabel(prev))}` : '';
-    setHead(`${monthLabel(m)} · Top ${C.CHART_SIZE}`, CATNAME[cat], `${total}${SRC[m.source] || esc(m.source)}${gap}`);
+    setHead(`${monthLabel(m)} · Top ${C.CHART_SIZE}`, CATNAME[cat], `${total}${srcLabel(m)}${gap}`);
     const rows = list.map(e => rowHtml({
       cat, id: `${m.month}|${cat}|${e.key}`, rank: e.rank, mvHtml: moveCell(e.mv), e, h: e.h,
       flag: e.rank === 1 ? `No. 1 ${ONE[cat]} of ${monthLabel(m)}${e.no1 > 1 ? ` · ${e.no1} months at No. 1` : ''}` : '',
@@ -282,13 +293,21 @@
     })).join('');
     return cols(cat, 'No. 1s', 'Peak', 'MOs', totals ? UNIT[cat] : 'Points', '') + rows;
   }
+  function yearSources(y) {
+    const src = X.sourcesOf(y), names = [];
+    if (src.includes('apple')) names.push(X.replay[y] ? 'Apple’s Replay totals' : 'Monthly Replay lists');
+    if (src.includes('deezer')) names.push('Deezer');
+    if (src.includes('spotify')) names.push('Spotify');
+    if (src.includes('lastfm')) names.push('Last.fm');
+    return names.join(' + ');
+  }
   function renderYearEnd(y) {
     const ms = M.filter(m => m.year === y), cat = state.cat, totals = C.YEAR_END_METHOD === 'totals';
     const span = ms.length ? `${MONTHS[ms[0].mon]}–${MONTHS[ms[ms.length - 1].mon]} ${y}` : `${y}`;
     const ongoing = y === LAST.year && isPartial(y);
     setHead(`${ongoing ? 'Year to date' : 'Year-end'} · ${span} · Top ${C.YEAR_END_SIZE}`,
       `${ongoing ? '' : y + ' '}Year-End ${CATNAME[cat]}`,
-      totals ? `<b>Most ${cat === 'songs' ? 'plays' : 'minutes'}</b><br>${X.replay[y] ? 'Apple’s Replay totals + Last.fm months' : 'Monthly Replay lists' + (M.some(m => m.year === y && m.source === 'lastfm') ? ' + Last.fm' : '')}`
+      totals ? `<b>Most ${cat === 'songs' ? 'plays' : 'minutes'}</b><br>${yearSources(y)}`
              : `<b>${isPartial(y) ? `${ms.length} of 12 months` : 'Full year'}</b><br>Points from the monthly charts`);
     return renderTally(X.yearEnd[y][cat], `ye${y}`, `No. 1 ${ONE[cat]} of ${y}${ongoing ? ' so far' : ''}`, C.YEAR_END_METHOD);
   }
@@ -566,7 +585,7 @@
       const y = state.year;
       for (let mo = 0; mo < 12; mo++) {
         const m = byMonth.get(ym(y, mo));
-        html += m ? `<button type="button" data-v="${m.month}" aria-pressed="${state.view === m.month}">${MON[mo]}${m.source === 'lastfm' ? '<span class="tag">LFM</span>' : ''}</button>`
+        html += m ? `<button type="button" data-v="${m.month}" aria-pressed="${state.view === m.month}">${MON[mo]}${tagFor(m)}</button>`
                   : `<button type="button" disabled title="No chart for ${MONTHS[mo]} ${y}">${MON[mo]}</button>`;
       }
       html += `<span class="push"></span>`;
@@ -607,7 +626,7 @@
           if (!firstOfYear || mo < firstOfYear.mon || y > LAST.year || (y === LAST.year && mo > LAST.mon)) continue;
           body += `<tr class="off"><td class="mo off">${MONTHS[mo]}<span>No data</span></td><td colspan="3"></td></tr>`; continue;
         }
-        body += `<tr tabindex="0" data-y="${y}" data-v="${m.month}"><td class="mo">${MONTHS[mo]}${m.source === 'lastfm' ? '<span>Last.fm</span>' : ''}</td>` +
+        body += `<tr tabindex="0" data-y="${y}" data-v="${m.month}"><td class="mo">${MONTHS[mo]}${m.source !== 'apple' ? `<span>${srcLabel(m).replace('Apple Music Replay', 'Apple')}</span>` : ''}</td>` +
           CATS.map(c => `<td>${cell(m.data[c][0], UNIT[c])}</td>`).join('') + `</tr>`;
       }
       el.innerHTML = `<thead><tr><th>Month</th><th>Song</th><th>Album</th><th>Artist</th></tr></thead><tbody>${body}</tbody>`;
@@ -625,17 +644,32 @@
       for (let k = M[i - 1].year * 12 + M[i - 1].mon + 1; k < M[i].year * 12 + M[i].mon; k++) missing.push(`${MONTHS[k % 12]} ${Math.floor(k / 12)}`);
     }
     const yeText = C.YEAR_END_METHOD === 'totals'
-      ? `<p><b>Year-end charts</b> rank like Apple Replay: by total plays (songs) or minutes (albums and artists) over the year. Where Apple’s full-year Replay list exists its totals are used; otherwise the monthly lists are added up. Last.fm months count too.</p>`
+      ? `<p><b>Year-end charts</b> rank like Apple Replay: by total plays (songs) or minutes (albums and artists) over the year. Where Apple’s full-year Replay list exists its totals are used; otherwise the monthly lists are added up. Deezer, Spotify and Last.fm months are added on top.</p>`
       : `<p><b>Year-end charts</b> use chart points: each monthly position earns points, from ${C.CHART_SIZE} for No. 1 down to 1 for No. ${C.CHART_SIZE}. Ties go to the better peak, then more months at No. 1, then more months on the chart, then the earlier debut.</p>`;
     const atText = C.ALL_TIME_METHOD === 'totals'
       ? `<p><b>All-time</b> ranks by total plays or minutes across everything.</p>`
       : `<p><b>All-time</b> uses chart points (${C.CHART_SIZE} for a No. 1 down to 1 for No. ${C.CHART_SIZE}), added up across every monthly chart.</p>`;
+    // "Nov 2018 – Sep 2019, Jan – Mar 2026": the months a source covers, as runs
+    const runs = src => {
+      const ms = M.filter(m => m.sources.includes(src)), out = [];
+      ms.forEach((m, i) => {
+        if (i && m.i === ms[i - 1].i + 1 && !m.gapBefore) out[out.length - 1][1] = m;
+        else out.push([m, m]);
+      });
+      return out.map(([s, e]) => s === e ? shortLabel(s) : s.year === e.year ? `${MON[s.mon]} – ${shortLabel(e)}` : `${shortLabel(s)} – ${shortLabel(e)}`).join(', ');
+    };
+    const used = ['deezer', 'spotify', 'apple'].filter(s => M.some(m => m.sources.includes(s)));
+    const NAMES = { apple: 'Apple Music Replay', deezer: 'Deezer listening history', spotify: 'Spotify streaming history' };
+    const list = used.map(s => `${NAMES[s]} (${runs(s)})`);
+    const services = used.filter(s => s !== 'apple').map(s => SRC[s]);
+    const mixed = M.filter(m => m.sources.length > 1);
     $('notes').innerHTML = `
-      <p><b>Monthly charts.</b> Each month is the top ${C.CHART_SIZE} from Apple Music Replay. Artists and albums are ranked by minutes listened and songs by plays. The charts run continuously from ${monthLabel(FIRST)}: moves, peaks and months on chart carry over from one year into the next.${missing.length ? ` There is no chart for ${missing.join(', ')}, so the month after compares with the last chart before the gap.` : ''}</p>
-      ${lfm ? `<p><b>Last.fm months.</b> ${lfm} come from Last.fm instead of Apple. Each scrobble counts as a play, and minutes are worked out from each track’s length. They’re marked LFM.</p>` : ''}
+      <p><b>Monthly charts.</b> The top ${C.CHART_SIZE} songs, albums and artists of each month, from ${list.length > 1 ? list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1] : list[0]}. Artists and albums are ranked by minutes listened and songs by plays. The charts run continuously from ${monthLabel(FIRST)}: moves, peaks and months on chart carry over from one year into the next.${missing.length ? ` There is no chart for ${missing.join(', ')}, so the month after compares with the last chart before the gap.` : ''}</p>
+      ${services.length ? `<p><b>${services.join(' and ')} months</b> are exact: every stream counts toward minutes, and a play is a stream of 30 seconds or more.${mixed.length ? ` When two services cover the same month, their numbers are added together (${mixed.length} month${mixed.length === 1 ? '' : 's'}; in Apple Music years these are marked +SP).` : ''} In Apple Music years, months that come only from another service are marked SP or LFM.</p>` : ''}
+      ${lfm ? `<p><b>Last.fm months.</b> ${lfm} come${lfm.includes(' and ') ? '' : 's'} from Last.fm. Each scrobble counts as a play, and minutes are worked out from each track’s length. Marked LFM.</p>` : ''}
       <p><b>Columns.</b> LM is last month’s position, PEAK is the best position reached so far and MOS is months on the chart. NEW is a first appearance and RE is a return after dropping out. Different editions of the same album count as one.</p>
       ${yeText}${atText}
-      <p><b>Library totals</b> add up every month something shows up in the Replay lists (top 20 artists, 30 songs, 15 albums) and Apple’s full-year totals where they exist, so they’re a floor: the real numbers are higher. Data built ${esc(DB.builtAt || '')}.</p>`;
+      <p><b>Library totals</b> add up every month something shows up in the lists (Replay shows the top 20 artists, 30 songs and 15 albums; Deezer and Spotify months keep the top 50) plus Apple’s full-year totals where they exist, so they’re a floor: the real numbers are higher. Data built ${esc(DB.builtAt || '')}.</p>`;
   }
 
   function render() {

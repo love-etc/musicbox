@@ -34,16 +34,42 @@
       const i = v.lastIndexOf(' — ');
       return i < 0 ? [v, a] : [v.slice(0, i), v.slice(i + 3)];
     };
-    const M = DB.months.slice().sort((a, b) => abs(a.month) - abs(b.month));
+    // Key every list entry (after renames), then merge months that have more than one
+    // source (e.g. Apple Music + Spotify in the same month) by adding their numbers up.
+    const keyed = m => ({
+      songs: m.songs.map(([t, a, v]) => { [t, a] = rename('songs', t, artistName(a)); return { title: t, artist: a, val: v, key: norm(t) + '|' + norm(a) }; }),
+      albums: m.albums.map(([t, a, v]) => { [t, a] = rename('albums', t, artistName(a)); return { title: t, artist: a, val: v, key: norm(t) + '|' + norm(a) }; }),
+      artists: m.artists.map(([n, v]) => { n = artistName(n); return { title: n, artist: '', val: v, key: norm(n) }; })
+    });
+    const RAW = DB.months.map(m => ({ ...m, full: keyed(m) }));   // one per source file, used for totals
+    const byMonth = new Map();
+    RAW.forEach(m => { if (!byMonth.has(m.month)) byMonth.set(m.month, []); byMonth.get(m.month).push(m); });
+    const ORDER = ['apple', 'deezer', 'spotify', 'lastfm'];
+    const M = [...byMonth.values()].map(parts => {
+      parts.sort((a, b) => ORDER.indexOf(a.source) - ORDER.indexOf(b.source));
+      if (parts.length === 1) return { ...parts[0], sources: [parts[0].source] };
+      const full = {};
+      CATS.forEach(cat => {
+        const acc = new Map();
+        parts.forEach(p => p.full[cat].forEach(e => {
+          if (acc.has(e.key)) acc.get(e.key).val += e.val;
+          else acc.set(e.key, { ...e });
+        }));
+        full[cat] = [...acc.values()].sort((a, b) => b.val - a.val);
+      });
+      const totals = parts.map(p => p.total && p.total.value);
+      return {
+        month: parts[0].month, source: parts.map(p => p.source).join('+'), sources: parts.map(p => p.source),
+        total: totals.every(Boolean) ? { value: totals.reduce((a, b) => a + b, 0), unit: 'min' } : null,
+        full, merged: true
+      };
+    }).sort((a, b) => abs(a.month) - abs(b.month));
     M.forEach((m, i) => {
       m.i = i;
       m.year = +m.month.slice(0, 4);
       m.mon = +m.month.slice(5, 7) - 1;
       m.gapBefore = i > 0 && abs(m.month) - abs(M[i - 1].month) > 1;
-      const songs = m.songs.map(([t, a, v]) => { [t, a] = rename('songs', t, artistName(a)); return { title: t, artist: a, val: v, key: norm(t) + '|' + norm(a) }; });
-      const albums = m.albums.map(([t, a, v]) => { [t, a] = rename('albums', t, artistName(a)); return { title: t, artist: a, val: v, key: norm(t) + '|' + norm(a) }; });
-      const artists = m.artists.map(([n, v]) => { n = artistName(n); return { title: n, artist: '', val: v, key: norm(n) }; });
-      m.full = { songs, albums, artists };
+      if (!m.merged) m.full = m.full || keyed(m);
       m.data = {};
     });
 
@@ -58,6 +84,7 @@
           if (seen.has(e.key)) { seen.get(e.key).val += e.val; return; }
           const c = { ...e }; seen.set(e.key, c); list.push(c);
         });
+        list.sort((a, b) => b.val - a.val);   // stable: only moves things when merged duplicates add up
         const top = list.slice(0, CHART_SIZE);
         const prevMap = i > 0 ? new Map(M[i - 1].data[cat].map(e => [e.key, e.rank])) : null;
         top.forEach((e, r) => {
@@ -116,23 +143,29 @@
 
     // ---- Listening totals ----
     // Every month's full list (not just the charted top) plus Apple's year totals.
-    // For each year: max(sum of the monthly values, Apple's full-year value). That's a floor:
-    // months where something fell off the lists aren't counted.
+    // For each year: max(sum of Apple's monthly values, Apple's full-year value)
+    // + whatever Deezer / Spotify / Last.fm months add. That's a floor: months where something
+    // fell off the lists aren't counted.
     const years = [...new Set(M.map(m => m.year))];
     const allYears = [...new Set([...years, ...Object.keys(replay).map(Number)])].sort((a, b) => a - b);
+    const sourcesOf = y => [...new Set(RAW.filter(m => +m.month.slice(0, 4) === y).map(m => m.source))];
     const T = {};  // cat -> Map(key -> { key, title, artist, byYear: {y: value}, total, h })
     CATS.forEach(cat => {
       const tm = new Map(); T[cat] = tm;
       const get = e => {
-        if (!tm.has(e.key)) tm.set(e.key, { key: e.key, title: e.title, artist: e.artist, monthly: {}, byYear: {}, total: 0, h: H[cat].get(e.key) || null });
+        if (!tm.has(e.key)) tm.set(e.key, { key: e.key, title: e.title, artist: e.artist, monthly: {}, extra: {}, byYear: {}, total: 0, h: H[cat].get(e.key) || null });
         return tm.get(e.key);
       };
-      M.forEach(m => m.full[cat].forEach(e => { const t = get(e); t.monthly[m.year] = (t.monthly[m.year] || 0) + e.val; }));
+      // Apple's full-year Replay number already covers its monthly lists; other sources come on top
+      RAW.forEach(m => {
+        const y = +m.month.slice(0, 4), bucket = m.source === 'apple' ? 'monthly' : 'extra';
+        m.full[cat].forEach(e => { const t = get(e); t[bucket][y] = (t[bucket][y] || 0) + e.val; });
+      });
       Object.keys(replay).forEach(y => replay[y][cat].forEach(e => get(e)));
       tm.forEach(t => {
         allYears.forEach(y => {
           const r = replayVal[y] && replayVal[y][cat].get(t.key);
-          const v = Math.max(t.monthly[y] || 0, r ? r.val : 0);
+          const v = Math.max(t.monthly[y] || 0, r ? r.val : 0) + (t.extra[y] || 0);
           if (v) { t.byYear[y] = v; t.total += v; }
         });
         if (t.h) { t.title = t.h.title; t.artist = t.h.artist; t.h.total = t.total; t.h.byYear = t.byYear; }
@@ -239,7 +272,7 @@
       a.total = a.h ? a.h.total : (T.artists.get(a.key) || {}).total || 0;
     });
 
-    return { M, H, T, years, allYears, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, artists: A, splitCredits };
+    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, artists: A, splitCredits };
   }
 
   const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, build };

@@ -1,0 +1,26 @@
+{
+  "month": "2019-02",
+  "source": "deezer",
+  "total": {"value": 207, "unit": "min"},
+  "note": "Deezer streaming history: 64 plays of 30s or more, 207 minutes.",
+  "artists": [
+    ["Avril Lavigne",207]
+  ],
+  "songs": [
+    ["It Was In Me","Avril Lavigne",9],
+    ["I Fell In Love With The Devil","Avril Lavigne",8],
+    ["Birdie","Avril Lavigne",8],
+    ["Souvenir","Avril Lavigne",8],
+    ["Crush","Avril Lavigne",7],
+    ["Goddess","Avril Lavigne",5],
+    ["Head Above Water","Avril Lavigne",5],
+    ["Bigger Wow","Avril Lavigne",4],
+    ["Tell Me It's Over","Avril Lavigne",3],
+    ["Love Me Insane","Avril Lavigne",3],
+    ["Warrior","Avril Lavigne",2],
+    ["Dumb Blonde (feat. Nicki Minaj)","Avril Lavigne",2]
+  ],
+  "albums": [
+    ["Head Above Water","Avril Lavigne",207]
+  ]
+}

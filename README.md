@@ -1,8 +1,10 @@
 # musicbox
 
 musicbox: a Billboard-style top 15 of songs, albums and
-artists for every month since May 2021, built from Apple Music Replay (and
-Last.fm for the months Apple has no data).
+artists for every month since November 2018, built from Deezer listening
+history (Nov 2018 to Sep 2019), Spotify streaming history (2019 to Apr 2021),
+Apple Music Replay (May 2021 on) and Last.fm for the odd month none of them
+covers.
 
 Chart runs are continuous across years, so moves, peaks and months-on-chart
 carry over from December into January. There are also year-end charts, an
@@ -14,12 +16,17 @@ for every album, artist and song that ever charted.
 ```
 data/
   charts/YYYY-MM.json   one file per month: artists, songs, albums (ranked)
+  spotify/YYYY-MM.json  months made from Spotify streaming history (same format)
+  deezer/YYYY-MM.json   months made from Deezer listening history (same format)
   replay/YYYY.json      Apple Music Replay's full-year lists
   images.json           [type, title, artist, imageUrl] rows for artwork
   aliases.json          renames so histories join up (optional)
   tracks.json           which charted songs are on which charted album
 scripts/
   build.mjs             bundles data/ into site/data.js
+  import-spotify.mjs    Spotify export -> data/spotify/
+  import-deezer.mjs     Deezer export -> data/deezer/
+  lib/history.mjs       shared by the two importers
   verify.mjs            checks moves, peaks and months-on-chart
 site/
   index.html, styles.css, app.js, charts.js
@@ -47,6 +54,7 @@ At the top of `site/charts.js`:
 
 "Totals" use Apple's full-year Replay number where it exists and otherwise add up
 the monthly lists (top 20 artists, 30 songs, 15 albums), so they're a floor.
+Deezer, Spotify and Last.fm months are added on top of that.
 
 ## Deploying
 
@@ -80,7 +88,7 @@ If Cloudflare Pages' build command is `node scripts/build.mjs`, it rebuilds
 
 ```json
 {
-  "month": "2026-02",
+  "month": "2025-03",
   "source": "lastfm",
   "total": {"value": 4191, "unit": "min"},
   "artists": [["Mylène Farmer", 933], ...],
@@ -91,7 +99,49 @@ If Cloudflare Pages' build command is `node scripts/build.mjs`, it rebuilds
 
 Artists and albums are minutes, songs are plays. Lists can be longer than the
 chart: only the top 15 (`CHART_SIZE` in `site/charts.js`) chart, the rest is
-kept for reference. `source` is `apple` or `lastfm`; `total` is optional.
+kept for reference. `source` is `apple`, `deezer`, `spotify` or `lastfm`; `total` is optional.
+
+If two files cover the same month (say `data/charts/2026-01.json` from Apple and
+`data/spotify/2026-01.json`), they're merged: values for the same song, album or
+artist are added together and the month is re-ranked. In years that have Apple
+Music months, the odd ones out get a small tag in the month bar: `+SP` for Apple
+plus Spotify, `SP`/`LFM` for a month from Spotify or Last.fm alone.
+
+## Spotify
+
+Request "Extended streaming history" from Spotify (Account → Privacy), unzip it
+into `spotify data/` at the repo root (it's in `.gitignore`: the export has IP
+addresses and other personal data, so only the monthly top lists get committed),
+then:
+
+```sh
+node scripts/import-spotify.mjs "spotify data" 2018-11:2021-04 2026-01:2026-03
+npm run build && npm run verify
+```
+
+The arguments are the months to import. Every `Streaming_History_Audio_*.json`
+in the folder is read, so several accounts can sit side by side; duplicates are
+dropped and streams are bucketed by month in São Paulo time. Minutes count all
+listening; plays are streams of 30 seconds or more, which is Spotify's own rule.
+Titles are tidied to look like Apple's (" - Remastered 2011" goes,
+" - Radio Edit" becomes " (Radio Edit)", "(Deluxe Edition)" goes). Months with
+under 30 minutes of listening are skipped.
+
+## Deezer
+
+Download your data from Deezer (Account settings → My personal data), put the
+`deezer-data_*.xlsx` in `deezer data/` (also in `.gitignore`), then:
+
+```sh
+node scripts/import-deezer.mjs "deezer data" 2018-11:2019-09
+npm run build && npm run verify
+```
+
+Only the listening-history sheet is read, with the same rules as Spotify. Deezer
+lists every artist on a track ("Lady Gaga, Bradley Cooper"): the song is credited
+"Lady Gaga & Bradley Cooper" like Apple does, and the minutes go to the first
+artist. If a song ends up credited differently from Apple or Spotify, add an
+alias (see below) so the two join up.
 
 ## Images
 

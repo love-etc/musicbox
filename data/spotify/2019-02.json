@@ -1,0 +1,44 @@
+{
+  "month": "2019-02",
+  "source": "spotify",
+  "total": {"value": 40, "unit": "min"},
+  "note": "Spotify streaming history: 16 plays of 30s or more, 40 minutes.",
+  "artists": [
+    ["Avril Lavigne",35],
+    ["Britney Spears",3],
+    ["Anna Blue",1],
+    ["Nicki Minaj",0],
+    ["WESTSIDE BOOGIE",0],
+    ["Cascada",0]
+  ],
+  "songs": [
+    ["Dumb Blonde (feat. Nicki Minaj)","Avril Lavigne",2],
+    ["Goddess","Avril Lavigne",1],
+    ["Girlfriend","Avril Lavigne",1],
+    ["Birdie","Avril Lavigne",1],
+    ["I'm a Slave 4 U","Britney Spears",1],
+    ["I Can Do Better","Avril Lavigne",1],
+    ["Love Me Insane","Avril Lavigne",1],
+    ["Souvenir","Avril Lavigne",1],
+    ["Bigger Wow","Avril Lavigne",1],
+    ["Sk8er Boi","Avril Lavigne",1],
+    ["Crush","Avril Lavigne",1],
+    ["Head Above Water","Avril Lavigne",1],
+    ["Tell Me It's Over","Avril Lavigne",1],
+    ["Girlfriend (German Version - Explicit)","Avril Lavigne",1],
+    ["So Alone","Anna Blue",1]
+  ],
+  "albums": [
+    ["Head Above Water","Avril Lavigne",18],
+    ["The Best Damn Thing","Avril Lavigne",7],
+    ["Dumb Blonde (feat. Nicki Minaj)","Avril Lavigne",7],
+    ["Britney","Britney Spears",3],
+    ["Let Go","Avril Lavigne",2],
+    ["Tell Me It's Over","Avril Lavigne",1],
+    ["IN2 MINDS","Anna Blue",1],
+    ["Massive Attack","Nicki Minaj",0],
+    ["Everythings For Sale","WESTSIDE BOOGIE",0],
+    ["Evacuate The Dancefloor","Cascada",0],
+    ["Goodbye Lullaby","Avril Lavigne",0]
+  ]
+}

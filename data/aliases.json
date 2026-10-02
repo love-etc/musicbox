@@ -1,12 +1,16 @@
 {
   "_comment": "Old name -> current name, so chart histories join up when Apple renames something. Songs/albums: \"Old title — Old artist\": \"New title — New artist\".",
   "artists": {
-    "Marina and The Diamonds": "MARINA"
+    "Marina and The Diamonds": "MARINA",
+    "Marina": "MARINA"
   },
   "songs": {
-    "Call On Me — SG Lewis & Tove Lo": "Call on Me — Tove Lo & SG Lewis"
+    "Call On Me — SG Lewis & Tove Lo": "Call on Me — Tove Lo & SG Lewis",
+    "I Like It — Cardi B": "I Like It — Cardi B, Bad Bunny & J Balvin",
+    "Close To Me — Ellie Goulding, Diplo & Swae Lee": "Close To Me (with Diplo) (feat. Swae Lee) — Ellie Goulding"
   },
   "albums": {
-    "Desire, I Want To Turn Into You: Everasking Edition — Caroline Polachek": "Desire, I Want to Turn Into You (Everasking Edition) — Caroline Polachek"
+    "Desire, I Want To Turn Into You: Everasking Edition — Caroline Polachek": "Desire, I Want to Turn Into You (Everasking Edition) — Caroline Polachek",
+    "Nyana Mixed by Tiësto — Andain": "Nyana Mixed by Tiësto — Tiësto"
   }
 }
