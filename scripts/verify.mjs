@@ -242,5 +242,5 @@ for (const group of window.MUSICBOX.releases?.groups || []) {
   assert.equal(X.T.albums.get(key(group.title))?.total, expected, `${group.title}: preserve all member listening`);
   for (const member of members) if (member !== key(group.title)) assert.ok(!X.T.albums.has(member));
 }
-console.log(bad ? `${bad} problem(s)` : `OK (${SITE}): ${X.M.length} months checked; chart history, awards, calendar streaks, release groups and listening totals verified`);
+console.log(bad ? `${bad} problem(s)` : `OK (${SITE}): ${X.M.length} ${X.period}ly charts checked; chart history, awards, calendar streaks, release groups and listening totals verified`);
 process.exit(bad ? 1 : 0);

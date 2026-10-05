@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "verify": "node scripts/verify.mjs && for d in site/*/; do node scripts/verify.mjs \"$d\"; done",
+    "verify": "node scripts/verify.mjs && for d in $(find site -mindepth 2 -name data.js -exec dirname {} \\;); do node scripts/verify.mjs \"$d\" || exit 1; done",
     "serve": "python3 -m http.server 8000 --directory site"
   }
 }

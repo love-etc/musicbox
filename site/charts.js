@@ -21,8 +21,12 @@
     .replace(/\([^)]*\)|\[[^\]]*\]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, '');
 
-  // Month index helpers: "2021-05" <-> absolute month number
-  const abs = ym => { const [y, m] = ym.split('-').map(Number); return y * 12 + (m - 1); };
+  // Period index helpers: "2021-05" -> absolute month number; "2024-05-03" (a weekly chart,
+  // named by its Friday) -> absolute week number. Consecutive charts differ by exactly 1.
+  const abs = key => {
+    const [y, m, d] = key.split('-').map(Number);
+    return d ? Math.round(Date.UTC(y, m - 1, d) / 6048e5) : y * 12 + (m - 1);
+  };
 
   // A missing calendar month or an off-chart month breaks a consecutive run.
   function longestRun(ranks, months, maxRank = CHART_SIZE) {
@@ -76,7 +80,8 @@
     };
     const family = (title, names) => norm(title) + '|' + norm(names[0]);
     const credits = new Map(), overrides = new Map(), songRedirects = new Map();
-    const pairs = [...(DB.months || []).flatMap(m => m.songs || []), ...Object.values(DB.replay || {}).flatMap(m => m.songs || [])];
+    const pairs = [...(DB.months || []).flatMap(m => m.songs || []), ...(DB.weeks || []).flatMap(m => m.songs || []),
+      ...Object.values(DB.replay || {}).flatMap(m => m.songs || [])];
     (DB.images || []).forEach(([type, title, artist]) => { if (type === 'song') pairs.push([title, artist]); });
     Object.entries(DB.tracks || {}).forEach(([album, songs]) => {
       if (album.startsWith('_')) return;
@@ -208,7 +213,13 @@
     const byMonth = new Map();
     RAW.forEach(m => { if (!byMonth.has(m.month)) byMonth.set(m.month, []); byMonth.get(m.month).push(m); });
     const ORDER = ['apple', 'deezer', 'spotify', 'lastfm'];
-    const M = [...byMonth.values()].map(parts => {
+    // The charts: one per month, or one per week on a weekly site (DB.weeks). Totals for the
+    // library and year-end charts always come from the months (RAW), so both sites agree.
+    const PERIOD = DB.weeks ? 'week' : 'month';
+    const M = PERIOD === 'week'
+      ? DB.weeks.map(w => ({ ...w, month: w.week, sources: [w.source], full: keyed({ ...w, month: w.week }), merged: true }))
+        .sort((a, b) => abs(a.month) - abs(b.month))
+      : [...byMonth.values()].map(parts => {
       parts.sort((a, b) => ORDER.indexOf(a.source) - ORDER.indexOf(b.source));
       if (parts.length === 1) return { ...parts[0], sources: [parts[0].source] };
       const full = {};
@@ -229,8 +240,15 @@
     }).sort((a, b) => abs(a.month) - abs(b.month));
     M.forEach((m, i) => {
       m.i = i;
-      m.year = +m.month.slice(0, 4);
-      m.mon = +m.month.slice(5, 7) - 1;
+      if (PERIOD === 'week') {
+        // A week belongs to the month and year its Monday falls in (where most of its days are)
+        const start = Date.parse(m.month + 'T00:00:00Z'), mid = new Date(start + 3 * 864e5);
+        m.year = mid.getUTCFullYear(); m.mon = mid.getUTCMonth();
+        m.end = new Date(start + 6 * 864e5).toISOString().slice(0, 10);
+      } else {
+        m.year = +m.month.slice(0, 4);
+        m.mon = +m.month.slice(5, 7) - 1;
+      }
       m.gapBefore = i > 0 && abs(m.month) - abs(M[i - 1].month) > 1;
       if (!m.merged) m.full = m.full || keyed(m);
       m.data = {};
@@ -481,7 +499,7 @@
       a.total = a.h ? a.h.total : (T.artists.get(a.key) || {}).total || 0;
     });
 
-    return { M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits, albumRedirects, songRedirects, rename, collections, albumPages };
+    return { period: PERIOD, M, H, T, years, allYears, sourcesOf, yearEnd, yearEndAll, allTime, allTimeAll, replay, library, awards, artists: A, splitCredits, albumRedirects, songRedirects, rename, collections, albumPages };
   }
 
   const api = { CHART_SIZE, YEAR_END_SIZE, ALL_TIME_SIZE, LIBRARY_LIMITS, YEAR_END_METHOD, ALL_TIME_METHOD, CATS, norm, longestRun, catalog, build };

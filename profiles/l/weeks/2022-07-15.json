@@ -1,0 +1,42 @@
+{
+  "week": "2022-07-15",
+  "source": "spotify",
+  "total": {"value": 34, "unit": "min"},
+  "note": "Spotify streaming history: 10 plays of 30s or more, 34 minutes.",
+  "artists": [
+    ["America",10],
+    ["Yusuf / Cat Stevens",4],
+    ["Wham!",4],
+    ["Jim Croce",4],
+    ["Van Morrison",4],
+    ["Paul Simon",4],
+    ["Redbone",3],
+    ["Also Joe",2],
+    ["Billy Joel",0]
+  ],
+  "songs": [
+    ["Peace Train","Yusuf / Cat Stevens",1],
+    ["Wake Me Up Before You Go-Go","Wham!",1],
+    ["Operator (That's Not the Way It Feels)","Jim Croce",1],
+    ["Into the Mystic","Van Morrison",1],
+    ["50 Ways to Leave Your Lover","Paul Simon",1],
+    ["Tin Man","America",1],
+    ["A Horse with No Name","America",1],
+    ["Ventura Highway","America",1],
+    ["Come and Get Your Love (Single Version)","Redbone",1],
+    ["Juniper Street","Also Joe",1]
+  ],
+  "albums": [
+    ["Teaser And The Firecat","Yusuf / Cat Stevens",4],
+    ["Make It Big","Wham!",4],
+    ["You Don't Mess Around With Jim","Jim Croce",4],
+    ["Moondance","Van Morrison",4],
+    ["Still Crazy After All These Years","Paul Simon",4],
+    ["Holiday","America",3],
+    ["America","America",3],
+    ["Homecoming","America",3],
+    ["Come and Get Your Love","Redbone",3],
+    ["Juniper Street","Also Joe",2],
+    ["52nd Street","Billy Joel",0]
+  ]
+}

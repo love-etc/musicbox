@@ -1,5 +1,5 @@
 // Shared by the streaming-history importers (Spotify, Deezer): turns a list of
-// streams into monthly top lists in the same format as data/charts/.
+// streams into monthly (or weekly) top lists in the same format as data/charts/.
 import { writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -31,8 +31,17 @@ export function findFiles(dir, re) {
   return files;
 }
 
-const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit' });
-export const monthOf = ts => fmt.format(new Date(ts)).slice(0, 7);
+const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+export const dayOf = ts => fmt.format(new Date(ts));            // "YYYY-MM-DD", São Paulo time
+export const monthOf = ts => dayOf(ts).slice(0, 7);
+// Billboard-style tracking weeks run Friday to Thursday; a week is named by its Friday.
+const DAY = 864e5;
+export function weekOf(ts) {
+  const d = dayOf(ts), t = Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
+  return new Date(t - ((new Date(t).getUTCDay() + 2) % 7) * DAY).toISOString().slice(0, 10);
+}
+// A week belongs to the month (and year) its Monday falls in, i.e. where most of its days are
+export const weekMonth = week => new Date(Date.parse(week + 'T00:00:00Z') + 3 * DAY).toISOString().slice(0, 7);
 
 // Titles are tidied to match Apple's style
 const VERSION = /remix|mix\b|edit\b|version|live|acoustic|instrumental|demo|mono|stereo|session|unplugged|a cappella|reprise|interlude|recorded|^feat\.|^with |from .*soundtrack|taylor'?s version/i;
@@ -57,13 +66,15 @@ export function cleanAlbum(a) {
 
 // streams: iterable of { ts (ISO string or ms, UTC), title, artist, album, ms, lead? }
 // `lead` (default: artist) is who gets the minutes in the artist and album lists.
-// Duplicates must already be dropped. Writes <root>/<outDir>/YYYY-MM.json for each month in `months`.
-export function writeMonths(streams, { root, outDir, source, label, months }) {
+// Duplicates must already be dropped. Writes <root>/<outDir>/YYYY-MM.json for each month in `months`,
+// or with period 'week', <outDir>/YYYY-MM-DD.json for each Friday-to-Thursday week in those months.
+export function writeMonths(streams, { root, outDir, source, label, months, period = 'month', depth = DEPTH }) {
+  const weekly = period === 'week';
   const B = new Map();
   let kept = 0;
   for (const r of streams) {
-    const mo = monthOf(r.ts);
-    if (!months.has(mo)) continue;
+    const mo = weekly ? weekOf(r.ts) : monthOf(r.ts);
+    if (!months.has(weekly ? weekMonth(mo) : mo)) continue;
     kept++;
     if (!B.has(mo)) B.set(mo, { ms: 0, plays: 0, artists: new Map(), songs: new Map(), albums: new Map() });
     const b = B.get(mo), ms = r.ms, play = ms >= 30000 ? 1 : 0;
@@ -85,12 +96,12 @@ export function writeMonths(streams, { root, outDir, source, label, months }) {
   for (const mo of [...B.keys()].sort()) {
     const b = B.get(mo);
     if (min(b.ms) < MIN_MINUTES) { console.log(`${mo}: only ${min(b.ms)} min, skipped`); continue; }
-    const artists = [...b.artists].sort((x, y) => y[1] - x[1]).slice(0, DEPTH).map(([n, ms]) => [n, min(ms)]);
-    const songs = [...b.songs.values()].filter(s => s.plays).sort((x, y) => y.plays - x.plays || y.ms - x.ms).slice(0, DEPTH).map(s => [s.title, s.artist, s.plays]);
-    const albums = [...b.albums.values()].sort((x, y) => y.ms - x.ms).slice(0, DEPTH)
+    const artists = [...b.artists].sort((x, y) => y[1] - x[1]).slice(0, depth).map(([n, ms]) => [n, min(ms)]);
+    const songs = [...b.songs.values()].filter(s => s.plays).sort((x, y) => y.plays - x.plays || y.ms - x.ms).slice(0, depth).map(s => [s.title, s.artist, s.plays]);
+    const albums = [...b.albums.values()].sort((x, y) => y.ms - x.ms).slice(0, depth)
       .map(a => [a.title, [...a.by].sort((x, y) => y[1] - x[1])[0][0], min(a.ms)]);
     const out = `{
-  "month": "${mo}",
+  "${weekly ? 'week' : 'month'}": "${mo}",
   "source": "${source}",
   "total": {"value": ${min(b.ms)}, "unit": "min"},
   "note": "${label} streaming history: ${b.plays} plays of 30s or more, ${min(b.ms)} minutes.",

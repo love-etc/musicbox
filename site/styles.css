@@ -361,3 +361,32 @@ a.lnk:hover { color: var(--blue); text-decoration: underline; text-underline-off
 .lc .dot[data-jump]:hover { transform: scale(1.35); background: var(--blue); }
 .row.flash { animation: flash 1.8s ease-out; }
 @keyframes flash { 0%, 35% { box-shadow: inset 4px 0 0 var(--blue); background: var(--blue-tint); } 100% { box-shadow: inset 0 0 0 transparent; } }
+
+/* Monthly | Weekly switch (sites that have both) */
+.topnav .views { display: inline-flex; margin-right: 10px; padding-right: 10px; border-right: 1px solid rgba(255,255,255,.3); gap: 2px; }
+.topnav .views a.view { opacity: .7; }
+.topnav .views a.view[aria-current="true"] { background: #fff; color: var(--blue); opacity: 1; }
+@media (max-width: 480px) { .topnav { flex-wrap: wrap; } .topnav .views { width: 100%; margin: 0 0 6px; padding: 0; border: 0; } }
+/* Weekly sites: the weeks of the chosen month, under the months */
+.bar .weeks { border-top: 1px solid #2c3139; overflow-x: auto; scrollbar-width: none; }
+.bar .weeks::-webkit-scrollbar { display: none; }
+.bar .weeks[hidden] { display: none; }
+.bar .weeks button { padding: 9px 11px 8px; font-size: 11.5px; letter-spacing: .04em; }
+.bar .weeks button.step { font-size: 16px; padding: 4px 12px; letter-spacing: 0; }
+/* Weekly chart history: 13 boxes a row, month names over the first week of each month */
+.panel .hist.wk .cell .b, .detail-hist .hist.wk .cell .b { height: 30px; font-size: 13px; }
+.panel .hist.wk .cell .m, .detail-hist .hist.wk .cell .m { font-size: 9px; letter-spacing: .04em; min-height: 12px; margin-bottom: 2px; }
+.detail-hist .hist.wk { grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 3px; }
+.panel .hist.wk { gap: 3px; }
+@media (max-width: 760px) { .panel .hist.wk .cell .b, .detail-hist .hist.wk .cell .b { height: 24px; font-size: 11px; } }
+/* /<name>/ picker page for people with monthly and weekly charts */
+.picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding-top: 40px; padding-bottom: 60px; }
+.picker .pick { display: flex; flex-direction: column; gap: 8px; padding: 28px 26px; border: 2px solid var(--ink); text-decoration: none; color: var(--ink); transition: background .15s, color .15s; }
+.picker .pick b { font-size: clamp(26px, 4vw, 38px); font-weight: 900; letter-spacing: -.03em; line-height: 1; }
+.picker .pick .eyebrow { font-size: 12px; font-weight: 800; color: var(--blue); letter-spacing: .14em; text-transform: uppercase; }
+.picker .pick .hint { color: var(--ink-2); font-size: 14px; margin: 0; }
+.picker .pick:hover, .picker .pick:focus-visible { background: var(--blue); border-color: var(--blue); color: #fff; }
+.picker .pick:hover .eyebrow, .picker .pick:hover .hint, .picker .pick:focus-visible .eyebrow, .picker .pick:focus-visible .hint { color: #fff; }
+@media (max-width: 640px) { .picker { grid-template-columns: 1fr; padding-top: 24px; } }
+.panel .lc.dense .dot, .detail-hist .lc.dense .dot { width: 4px; height: 4px; margin: -4px 0 0 -4px; border-width: 2px; }
+.panel .lc.dense .dot.one, .detail-hist .lc.dense .dot.one { width: 6px; height: 6px; margin: -5px 0 0 -5px; }

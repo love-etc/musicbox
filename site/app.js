@@ -1,6 +1,6 @@
 /* Page rendering. Data comes from data.js (window.MUSICBOX), maths from charts.js.
    Views (all in the URL hash, so every page has a shareable link):
-     #/2023-07/songs            a monthly chart
+     #/2023-07/songs            a monthly chart         #/2024-05-03/songs  a weekly chart (weekly sites)
      #/2023/year-end/albums     a year-end chart        #/2023/replay/artists  Apple's Replay list
      #/all-time/songs           the all-time chart
      #/library/albums           everything that ever charted, ranked by listening totals
@@ -24,13 +24,37 @@
   const SHOW_REPLAY = C.YEAR_END_METHOD !== 'totals';
   const hasReplay = y => SHOW_REPLAY && !!X.replay[y];
 
+  // Weekly sites (data.js with weeks) chart Friday-to-Thursday weeks instead of months.
+  // m.month is then the week's Friday ("2024-05-03") and m.mon / m.year come from its Monday.
+  const WEEKLY = X.period === 'week';
+  const W = WEEKLY
+    ? { one: 'week', many: 'weeks', Cap: 'Week', ly: 'weekly', lw: 'LW', on: 'Wks', ON: 'WK' }
+    : { one: 'month', many: 'months', Cap: 'Month', ly: 'monthly', lw: 'LM', on: 'MOs', ON: 'MO' };
+  const per = n => `${n} ${n === 1 ? W.one : W.many}`;
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const fmt = n => Number(n).toLocaleString('en-US');
-  const monthLabel = m => `${MONTHS[m.mon]} ${m.year}`;
-  const shortLabel = m => `${MON[m.mon]} ${m.year}`;
+  const dayLabel = (iso, year = true) => { const [y, m, d] = iso.split('-').map(Number); return `${MON[m - 1]} ${d}${year ? ', ' + y : ''}`; };
+  const weekRange = m => {
+    const [y1, m1, d1] = m.month.split('-').map(Number), [y2, m2, d2] = m.end.split('-').map(Number);
+    if (y1 !== y2) return `${MON[m1 - 1]} ${d1}, ${y1} – ${MON[m2 - 1]} ${d2}, ${y2}`;
+    return m1 !== m2 ? `${MON[m1 - 1]} ${d1} – ${MON[m2 - 1]} ${d2}, ${y1}` : `${MON[m1 - 1]} ${d1}–${d2}, ${y1}`;
+  };
+  const monthLabel = m => WEEKLY ? weekRange(m) : `${MONTHS[m.mon]} ${m.year}`;    // "September 2026" / "Sep 19–25, 2026"
+  const shortLabel = m => WEEKLY ? dayLabel(m.month) : `${MON[m.mon]} ${m.year}`;  // "Sep 2026" / "Sep 19, 2026"
+  const ofLabel = m => WEEKLY ? `the week of ${dayLabel(m.month)}` : monthLabel(m); // "No. 1 song of …"
   const byMonth = new Map(M.map(m => [m.month, m]));
   const ym = (y, mo) => `${y}-${String(mo + 1).padStart(2, '0')}`;
-  const isPartial = y => M.filter(m => m.year === y).length < 12;
+  // Every week (by its Friday) that belongs to year y: the weeks whose Monday is in y
+  const weeksOf = y => {
+    const out = [];
+    for (let t = Date.UTC(y, 0, 1); new Date(t).getUTCFullYear() === y; t += 864e5) {
+      if (new Date(t).getUTCDay() === 1) out.push(new Date(t - 3 * 864e5).toISOString().slice(0, 10));
+    }
+    return out;
+  };
+  const perYear = y => WEEKLY ? weeksOf(y).length : 12;
+  const isPartial = y => M.filter(m => m.year === y).length < perYear(y);
+  const isPeriod = v => /^\d{4}-\d{2}(-\d{2})?$/.test(v);
   const $ = id => document.getElementById(id);
 
   // ---- Links to detail pages ----
@@ -85,7 +109,7 @@
       state = { ...state, view: a, key: (a === 'album' ? X.albumRedirects.get(key) : a === 'song' ? X.songRedirects.get(key) : null) || key }; return;
     }
     if (a === 'all-time') { state = { year: 'all', view: 'all-time', cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
-    if (/^\d{4}-\d{2}$/.test(a) && byMonth.has(a)) { state = { year: +a.slice(0, 4), view: a, cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
+    if (isPeriod(a) && byMonth.has(a)) { state = { year: +a.slice(0, 4), view: a, cat: CATS.includes(b) ? b : state.cat, key: null }; return; }
     if (/^\d{4}$/.test(a) && allYears.includes(+a)) {
       const y = +a;
       const view = b === 'replay' && hasReplay(y) ? 'replay' : (b === 'year-end' || b === 'replay') && X.yearEnd[y] ? 'year-end' : defaultView(y);
@@ -96,7 +120,7 @@
     if (s.view === 'library' || s.view === 'awards') return `#/${s.view}/${s.cat}`;
     if (s.view === 'album' || s.view === 'artist' || s.view === 'song') return `#/${s.view}/${enc(s.key)}`;
     if (s.view === 'all-time') return `#/all-time/${s.cat}`;
-    if (/^\d{4}-\d{2}$/.test(s.view)) return `#/${s.view}/${s.cat}`;
+    if (isPeriod(s.view)) return `#/${s.view}/${s.cat}`;
     return `#/${s.year}/${s.view}/${s.cat}`;
   }
   function go(next, push = true) {
@@ -177,9 +201,24 @@
     const lines = segs.filter(s => s.length > 1).map(s => `<polyline points="${s.map(p => p.join(',')).join(' ')}" fill="none" stroke="#1543d6" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`).join('');
     let dots = '';
     for (let i = a; i <= b; i++) { const p = h.ranks[i]; if (p) dots += `<i class="dot${p.rank === 1 ? ' one' : ''}" style="left:${xp(i)}%;top:${y(p.rank)}px" title="${esc(shortLabel(M[i]))}: No. ${p.rank}" ${jumpAttrs(M[i], h)}></i>`; }
-    return `<div class="lc" role="group" aria-label="Chart position by month">${grid}<div class="plot">${ticks.join('')}<svg viewBox="0 0 100 ${Hh}" preserveAspectRatio="none">${lines}</svg>${dots}</div></div>`;
+    return `<div class="lc${n > 60 ? ' dense' : ''}" role="group" aria-label="Chart position by ${W.one}">${grid}<div class="plot">${ticks.join('')}<svg viewBox="0 0 100 ${Hh}" preserveAspectRatio="none">${lines}</svg>${dots}</div></div>`;
   }
   function yearCells(h, y) {
+    if (WEEKLY) {
+      // One box per week of the year; the month is written over its first week
+      let cells = '', lastMon = -1;
+      weeksOf(y).forEach(key => {
+        const m = byMonth.get(key), p = m && h.ranks[m.i];
+        const mid = new Date(Date.parse(key + 'T00:00:00Z') + 3 * 864e5).getUTCMonth();
+        const label = mid !== lastMon ? MON[mid] : ''; lastMon = mid;
+        cells += `<div class="cell"><div class="m">${label}</div>` +
+          (p ? `<div class="b on" style="background:${rankColor(p.rank)}" title="${esc(monthLabel(m))}: No. ${p.rank}, ${fmt(p.val)} ${UNIT[h.cat]}" ${jumpAttrs(m, h)}>${p.rank}</div>`
+             : m ? `<div class="b" title="${esc(dayLabel(key))}">–</div>`
+             : key < FIRST.month || key > LAST.month ? `<div class="b"></div>`      // before the first / after the latest chart
+             : `<div class="b gap" title="${esc(dayLabel(key))}: no chart this week"></div>`) + `</div>`;
+      });
+      return `<div class="hist wk" style="--n:13">${cells}</div>`;
+    }
     let cells = '';
     for (let mo = 0; mo < 12; mo++) {
       const m = byMonth.get(ym(y, mo)), p = m && h.ranks[m.i];
@@ -216,8 +255,8 @@
     if (h.album) links.push(`<a class="go" href="${pageHref('albums', h.album.key)}">From ${esc(h.album.title)} →</a>`);
     return `<div class="grid4">
         <div class="stat"><div class="k">Total</div><div class="v">${fmt(h.total || 0)}<small>${unit}</small></div><div class="n">known listening</div></div>
-        <div class="stat"><div class="k">Best month</div><div class="v">${fmt(h.ranks[best].val)}<small>${unit}</small></div><div class="n">${shortLabel(M[best])}, at No. ${h.ranks[best].rank}</div></div>
-        <div class="stat"><div class="k">Peak</div><div class="v">${pkNo(h.peak)}</div><div class="n">${atPeak} month${atPeak === 1 ? '' : 's'} at peak · ${h.months} on chart</div></div>
+        <div class="stat"><div class="k">Best ${W.one}</div><div class="v">${fmt(h.ranks[best].val)}<small>${unit}</small></div><div class="n">${shortLabel(M[best])}, at No. ${h.ranks[best].rank}</div></div>
+        <div class="stat"><div class="k">Peak</div><div class="v">${pkNo(h.peak)}</div><div class="n">${per(atPeak)} at peak · ${h.months} on chart</div></div>
         <div class="stat">${fourth}</div>
       </div>
       <h4>Chart history</h4>
@@ -225,7 +264,7 @@
       <div class="foot">${debutText(h)}</div>
       <div class="golinks">${links.join('')}</div>`;
   }
-  const debutText = h => `Debuted at No. ${h.ranks[h.first].rank} in ${monthLabel(M[h.first])}${h.last !== h.first ? `; last charted in ${monthLabel(M[h.last])} at No. ${h.ranks[h.last].rank}` : ''}.`;
+  const debutText = h => `Debuted at No. ${h.ranks[h.first].rank} in ${ofLabel(M[h.first])}${h.last !== h.first ? `; last charted in ${ofLabel(M[h.last])} at No. ${h.ranks[h.last].rank}` : ''}.`;
 
   // ---- Expandable rows ----
   const panelData = new Map();
@@ -296,22 +335,22 @@
     setHead(`${monthLabel(m)} · Top ${C.CHART_SIZE}`, CATNAME[cat], [total.replace(/<br>$/, ''), gap.replace(/^<br>/, '')].filter(Boolean).join('<br>'));
     const rows = list.map(e => rowHtml({
       cat, id: `${m.month}|${cat}|${e.key}`, rank: e.rank, mvHtml: moveCell(e.mv), e, h: e.h,
-      flag: e.rank === 1 ? `No. 1 ${ONE[cat]} of ${monthLabel(m)}${e.no1 > 1 ? ` · ${e.no1} months at No. 1` : ''}` : '',
-      inline: `LM ${e.lw || '–'} · PEAK ${pk(e.peak)} · ${e.months} MO${e.months === 1 ? '' : 'S'}`,
+      flag: e.rank === 1 ? `No. 1 ${ONE[cat]} of ${ofLabel(m)}${e.no1 > 1 ? ` · ${e.no1} ${W.many} at No. 1` : ''}` : '',
+      inline: `${W.lw} ${e.lw || '–'} · PEAK ${pk(e.peak)} · ${e.months} ${W.ON}${e.months === 1 ? '' : 'S'}`,
       c1: e.lw || '–', c2: pk(e.peak), c3: e.months, val: fmt(e.val), unit
     })).join('');
-    return cols(cat, 'LM', 'Peak', 'MOs', unit) + rows;
+    return cols(cat, W.lw, 'Peak', W.on, unit) + rows;
   }
   function renderTally(list, idPrefix, flagText, method) {
     const cat = state.cat, totals = method === 'totals';
     const rows = list.map(e => rowHtml({
       cat, id: `${idPrefix}|${cat}|${e.key}`, rank: e.rank, mvHtml: '', e, h: e.h,
       flag: e.rank === 1 ? flagText : '',
-      inline: e.months ? `PEAK ${pk(e.peak)} · ${e.months} MO${e.months === 1 ? '' : 'S'}${e.no1 ? ` · ${e.no1}× NO. 1` : ''}` : 'DIDN’T MAKE THE MONTHLY TOP ' + C.CHART_SIZE,
+      inline: e.months ? `PEAK ${pk(e.peak)} · ${e.months} ${W.ON}${e.months === 1 ? '' : 'S'}${e.no1 ? ` · ${e.no1}× NO. 1` : ''}` : `DIDN’T MAKE THE ${W.ly.toUpperCase()} TOP ${C.CHART_SIZE}`,
       c1: e.no1 || '–', c2: e.months ? pk(e.peak) : '–', c3: e.months || '–',
       val: totals ? fmt(e.value) : e.points, unit: totals ? UNIT[cat] : 'pts'
     })).join('');
-    return cols(cat, 'No. 1s', 'Peak', 'MOs', totals ? UNIT[cat] : 'Points', '') + rows;
+    return cols(cat, 'No. 1s', 'Peak', W.on, totals ? UNIT[cat] : 'Points', '') + rows;
   }
   function renderYearEnd(y) {
     const ms = M.filter(m => m.year === y), cat = state.cat, totals = C.YEAR_END_METHOD === 'totals';
@@ -319,14 +358,14 @@
     const ongoing = y === LAST.year && isPartial(y);
     setHead(`${ongoing ? 'Year to date' : 'Year-end'} · ${span} · Top ${C.YEAR_END_SIZE}`,
       `${ongoing ? '' : y + ' '}Year-End ${CATNAME[cat]}`,
-      totals ? `<b>Most ${cat === 'songs' ? 'plays' : 'minutes'}</b><br>${isPartial(y) ? `${ms.length} of 12 months` : 'Full year'}`
-             : `<b>${isPartial(y) ? `${ms.length} of 12 months` : 'Full year'}</b><br>Points from the monthly charts`);
+      totals ? `<b>Most ${cat === 'songs' ? 'plays' : 'minutes'}</b><br>${isPartial(y) ? `${ms.length} of ${perYear(y)} ${W.many}` : 'Full year'}`
+             : `<b>${isPartial(y) ? `${ms.length} of ${perYear(y)} ${W.many}` : 'Full year'}</b><br>Points from the ${W.ly} charts`);
     return renderTally(X.yearEnd[y][cat], `ye${y}`, `No. 1 ${ONE[cat]} of ${y}${ongoing ? ' so far' : ''}`, C.YEAR_END_METHOD);
   }
   function renderAllTime() {
     const cat = state.cat, totals = C.ALL_TIME_METHOD === 'totals';
     setHead(`All-time · ${shortLabel(FIRST)} – ${shortLabel(LAST)} · Top ${C.ALL_TIME_SIZE}`, `All-Time ${CATNAME[cat]}`,
-      totals ? `<b>Most ${cat === 'songs' ? 'plays' : 'minutes'}</b><br>Every month, every year` : `<b>${M.length} monthly charts</b><br>Points from the monthly charts`);
+      totals ? `<b>Most ${cat === 'songs' ? 'plays' : 'minutes'}</b><br>Every month, every year` : `<b>${M.length} ${W.ly} charts</b><br>Points from the ${W.ly} charts`);
     return renderTally(X.allTime[cat], 'all', `No. 1 ${ONE[cat]} of all time`, C.ALL_TIME_METHOD);
   }
   function renderReplay(y) {
@@ -357,7 +396,7 @@
   };
   const listRows = (list, prefix, cat) => list.map((h, i) => rowHtml({
     cat, id: `${prefix}|${cat}|${h.key}`, rank: i + 1, mvHtml: '', e: h, h: h.months ? h : null, flag: '',
-    inline: h.months ? `PEAK ${pk(h.peak)} · ${h.months} MO${h.months === 1 ? '' : 'S'}${h.no1 ? ` · ${h.no1}× NO. 1` : ''}` : 'NOT CHARTED',
+    inline: h.months ? `PEAK ${pk(h.peak)} · ${h.months} ${W.ON}${h.months === 1 ? '' : 'S'}${h.no1 ? ` · ${h.no1}× NO. 1` : ''}` : 'NOT CHARTED',
     c1: h.months ? pk(h.peak) : '–', c2: h.months, c3: h.no1 || '–', val: fmt(h.total || 0), unit: UNIT[cat], plain: true
   })).join('');
 
@@ -365,7 +404,7 @@
   const SORTS = {
     title:  { label: 'Name',   first: 1,  get: h => h.title },
     peak:   { label: 'Peak',   first: 1,  get: h => h.peak },
-    months: { label: 'Months', first: -1, get: h => h.months },
+    months: { label: W.Cap + 's', first: -1, get: h => h.months },
     no1:    { label: 'No. 1s', first: -1, get: h => h.no1 || 0 },
     total:  { label: 'Total',  first: -1, get: h => h.total || 0 }
   };
@@ -441,11 +480,11 @@
   function renderAwards() {
     const cat = state.cat;
     const definitions = [
-      ['no1', 'Most months at No. 1', 'Every month at the top, including return visits.', 'months'],
-      ['streak', 'Longest chart run', `Consecutive months in the top ${C.CHART_SIZE}.`, 'months'],
-      ['monthly', `Most ${UNIT_LONG[cat]} in a month`, 'The biggest single month for each entry.', UNIT[cat]],
-      ['no1Streak', 'Longest run at No. 1', 'Consecutive months holding the top spot.', 'months'],
-      ['months', 'Most months on chart', 'Every appearance, across all chart runs.', 'months'],
+      ['no1', `Most ${W.many} at No. 1`, `Every ${W.one} at the top, including return visits.`, W.many],
+      ['streak', 'Longest chart run', `Consecutive ${W.many} in the top ${C.CHART_SIZE}.`, W.many],
+      ['monthly', `Most ${UNIT_LONG[cat]} in a ${W.one}`, `The biggest single ${W.one} for each entry.`, UNIT[cat]],
+      ['no1Streak', 'Longest run at No. 1', `Consecutive ${W.many} holding the top spot.`, W.many],
+      ['months', `Most ${W.many} on chart`, 'Every appearance, across all chart runs.', W.many],
       ['points', 'Most chart points', `${C.CHART_SIZE} points for No. 1, down to 1 for No. ${C.CHART_SIZE}.`, 'points']
     ];
     const dateLink = i => `<a class="lnk" href="#/${M[i].month}/${cat}">${shortLabel(M[i])}</a>`;
@@ -457,13 +496,13 @@
         return `<li class="award-entry${r.rank === 1 ? ' winner' : ''}"><span class="award-rank">${r.rank}</span>
           <a class="award-art" href="${pageHref(cat, h.key)}" aria-label="${esc(h.title)}">${tileFor(cat, h)}</a>
           <div class="award-name"><a class="lnk" href="${pageHref(cat, h.key)}">${esc(h.title)}</a>${h.artist ? `<div class="award-artist">${esc(h.artist)}</div>` : ''}${period ? `<div class="award-period">${period}</div>` : ''}</div>
-          <div class="award-value">${fmt(r.value)}<small>${r.value === 1 && unit === 'months' ? 'month' : unit}</small></div></li>`;
+          <div class="award-value">${fmt(r.value)}<small>${r.value === 1 && unit === W.many ? W.one : unit}</small></div></li>`;
       }).join('');
       return `<article class="award-card"><div class="award-heading"><span class="award-number">${String(index + 1).padStart(2, '0')}</span><div><h3>${title}</h3><p>${description}</p></div></div>
         ${records.length ? `<ol class="award-leaders">${rows}</ol>` : '<p class="empty">No records yet.</p>'}</article>`;
     }).join('');
-    return `<div class="head"><div><div class="eyebrow">All-time records · ${shortLabel(FIRST)} – ${shortLabel(LAST)}</div><h2>Awards</h2></div><div class="meta"><b>${CATNAME[cat]} · ${M.length} monthly charts</b><br>The leaders, the longest runs, the biggest months</div></div>
-      <p class="awards-intro">Records from the full monthly top ${C.CHART_SIZE} history. Each leaderboard shows up to five entries; ties share a rank. Streaks cross years, but break at an off-chart or missing month.</p>
+    return `<div class="head"><div><div class="eyebrow">All-time records · ${shortLabel(FIRST)} – ${shortLabel(LAST)}</div><h2>Awards</h2></div><div class="meta"><b>${CATNAME[cat]} · ${M.length} ${W.ly} charts</b><br>The leaders, the longest runs, the biggest ${W.many}</div></div>
+      <p class="awards-intro">Records from the full ${W.ly} top ${C.CHART_SIZE} history. Each leaderboard shows up to five entries; ties share a rank. Streaks cross years, but break at an off-chart or missing ${W.one}.</p>
       <div class="award-grid">${cards}</div>`;
   }
 
@@ -478,8 +517,8 @@
     const { atPeak } = chartFacts(h);
     return `<div class="facts">
       ${factBox('Total', `${fmt(h.total || 0)}<small>${UNIT[cat]}</small>`, 'known listening')}
-      ${factBox('Peak', pkNo(h.peak), `${atPeak} month${atPeak === 1 ? '' : 's'} at peak`)}
-      ${factBox('Months on chart', h.months, h.no1 ? `${h.no1} at No. 1` : 'never No. 1')}
+      ${factBox('Peak', pkNo(h.peak), `${per(atPeak)} at peak`)}
+      ${factBox(`${W.Cap}s on chart`, h.months, h.no1 ? `${h.no1} at No. 1` : 'never No. 1')}
       ${factBox('Debut', shortLabel(M[h.first]), `at No. ${h.ranks[h.first].rank}`)}
       ${factBox('Library', `No. ${h.libRank}`, `of ${X.library[cat].length} ${CATNAME[cat].toLowerCase()}`)}
     </div>`;
@@ -515,13 +554,13 @@
     const kind = X.collections.get(key)?.kind || 'Album';
     const intro = h.months ? hero('albums', h, kind, artistLinks(h.artist))
       : `<div class="hero">${tileFor('albums', h, 'big')}<div class="info"><div class="eyebrow">${esc(kind)}</div><h2>${esc(h.title)}</h2><div class="by">${artistLinks(h.artist)}</div>
-          <div class="facts collection-facts">${factBox('Total', `${fmt(h.total)}<small>min</small>`, 'known listening')}${factBox('Months on chart', 0, 'not charted')}${factBox('Library', 'No. ' + h.libRank, 'ranked by minutes')}</div>${byYearText(h, 'albums')}
-          <p class="hint">This collection has not reached the monthly top ${C.CHART_SIZE}. Listening totals combine its standalone releases.</p></div></div>`;
+          <div class="facts collection-facts">${factBox('Total', `${fmt(h.total)}<small>min</small>`, 'known listening')}${factBox(`${W.Cap}s on chart`, 0, 'not charted')}${factBox('Library', 'No. ' + h.libRank, 'ranked by minutes')}</div>${byYearText(h, 'albums')}
+          <p class="hint">This collection has not reached the ${W.ly} top ${C.CHART_SIZE}. Listening totals combine its standalone releases.</p></div></div>`;
     return intro
       + (h.months ? histSection(h, 'alb|' + key) : '')
       + `<h3 class="sec">Charted songs</h3>`
       + (songs.length ? rankedList(songs, 'alb' + key)
-                      : `<p class="hint">No songs from this album made the monthly top ${C.CHART_SIZE} (or they’re not matched yet: see data/tracks.json).</p>`)
+                      : `<p class="hint">No songs from this album made the ${W.ly} top ${C.CHART_SIZE} (or they’re not matched yet: see data/tracks.json).</p>`)
       + (more.length ? `<h3 class="sec">More by ${esc(h.artist)}</h3><div class="cards">${more.map(a => cardHtml('albums', a)).join('')}</div>` : '');
   }
   // ---- Artist achievements ----
@@ -545,12 +584,12 @@
     const tiles = [
       achTile(`No. 1 ${words}`, n1.length, firstNo1 ? `first: ${link(firstNo1)}, ${shortLabel(M[firstAt(firstNo1, 1)])}` : 'none yet', n1.length > 0),
       achTile(`Top 5 ${words}`, t5.length, `${plural(t10.length, 'top 10 ' + word)}`),
-      achTile(`Charted ${words}`, list.length, `${plural(mAll, word + '-month')} on the charts`),
-      achTile('Months at No. 1', m1, m1 ? `most: ${link(topRun)} (${topRun.no1})` : 'counted across all ' + words, m1 > 0),
-      achTile('Months in the top 5', m5, `counted across all ${words}`),
+      achTile(`Charted ${words}`, list.length, `${plural(mAll, word + '-' + W.one)} on the charts`),
+      achTile(`${W.Cap}s at No. 1`, m1, m1 ? `most: ${link(topRun)} (${topRun.no1})` : 'counted across all ' + words, m1 > 0),
+      achTile(`${W.Cap}s in the top 5`, m5, `counted across all ${words}`),
       achTile('Most at once', most, `${most === 1 ? word : words} on the ${monthLabel(M[mostI])} chart`),
       achTile('Best debut', `No. ${debut.ranks[debut.first].rank}`, `${link(debut)}, ${shortLabel(M[debut.first])}`, debut.ranks[debut.first].rank === 1),
-      achTile('Most months charted', plural(longest.months, 'month'), link(longest))
+      achTile(`Most ${W.many} charted`, plural(longest.months, W.one), link(longest))
     ];
     const chips = n1.length ? `<div class="achips"><span>No. 1 ${words}</span>${n1.sort((x, y) => firstAt(x, 1) - firstAt(y, 1)).map(h => `<a href="${pageHref(cat, h.key)}">${esc(h.title)}${h.no1 > 1 ? ` <b>×${h.no1}</b>` : ''}</a>`).join('')}</div>` : '';
     return `<div class="tiles">${tiles.join('')}</div>${chips}`;
@@ -574,10 +613,10 @@
       });
       const firstNo1 = firstAt(h, 1);
       parts.push(`<h4>As an artist</h4><div class="tiles">
-        ${achTile('Months at No. 1', h.no1, firstNo1 >= 0 ? `first: ${shortLabel(M[firstNo1])}` : 'none yet', h.no1 > 0)}
-        ${achTile('Months in the top 5', top5, `of ${plural(h.months, 'month')} on the chart`)}
-        ${achTile('Longest streak', plural(best, 'month'), best > 1 ? `in a row, ${shortLabel(M[bestStart])} – ${shortLabel(M[bestEnd])}` : 'on the artists chart')}
-        ${achTile('Triple crowns', crowns, 'months at No. 1 on artists, songs and albums at once', crowns > 0)}
+        ${achTile(`${W.Cap}s at No. 1`, h.no1, firstNo1 >= 0 ? `first: ${shortLabel(M[firstNo1])}` : 'none yet', h.no1 > 0)}
+        ${achTile(`${W.Cap}s in the top 5`, top5, `of ${plural(h.months, W.one)} on the chart`)}
+        ${achTile('Longest streak', plural(best, W.one), best > 1 ? `in a row, ${shortLabel(M[bestStart])} – ${shortLabel(M[bestEnd])}` : 'on the artists chart')}
+        ${achTile('Triple crowns', crowns, `${W.many} at No. 1 on artists, songs and albums at once`, crowns > 0)}
       </div>`);
     }
     if (a.songs.length) {
@@ -601,7 +640,7 @@
     } else {
       const fake = { title: a.name, key, artist: '' };
       html = `<div class="hero">${tileFor('artists', fake, 'big')}<div class="info"><div class="eyebrow">Artist</div><h2>${esc(a.name)}</h2>
-        <p class="hint">Never made the monthly artists top ${C.CHART_SIZE}, but shows up on the songs or albums charts.</p></div></div>`;
+        <p class="hint">Never made the ${W.ly} artists top ${C.CHART_SIZE}, but shows up on the songs or albums charts.</p></div></div>`;
     }
     html += artistAchievements(a);
     if (a.albums.length) html += `<h3 class="sec">Albums</h3><div class="cards">${a.albums.map(x => cardHtml('albums', x)).join('')}</div>`;
@@ -629,7 +668,11 @@
   function renderTopNav() {
     const chart = isChartView(), awards = state.view === 'awards';
     if (chart) lastChartHash = hashFor(state);
-    $('topnav').innerHTML = `<a href="${lastChartHash}"${chart ? ' aria-current="page"' : ''}>Charts</a><a href="#/library/albums"${!chart && !awards ? ' aria-current="page"' : ''}>Library</a><a href="#/awards/songs"${awards ? ' aria-current="page"' : ''}>Awards</a>`;
+    // Monthly | Weekly switch on sites that have both. Library, awards and detail pages keep
+    // their place; chart pages open the other site's newest chart.
+    const keep = chart ? '' : location.hash;
+    const views = (DB.views || []).map(v => `<a class="view" href="${esc(v.href + keep)}"${v.current ? ' aria-current="true"' : ''}>${esc(v.label)}</a>`).join('');
+    $('topnav').innerHTML = (views ? `<span class="views">${views}</span>` : '') + `<a href="${lastChartHash}"${chart ? ' aria-current="page"' : ''}>Charts</a><a href="#/library/albums"${!chart && !awards ? ' aria-current="page"' : ''}>Library</a><a href="#/awards/songs"${awards ? ' aria-current="page"' : ''}>Awards</a>`;
     $('yearwrap').hidden = !chart;
   }
   function renderYearSelect() {
@@ -647,6 +690,16 @@
       if (state.view !== 'library') html = `<button type="button" data-back="1">← Back</button><span class="sep"></span>` + html;
     } else if (state.year === 'all') {
       html = `<button type="button" class="ye" data-v="all-time" aria-pressed="true">All-time top ${C.ALL_TIME_SIZE}</button>`;
+    } else if (WEEKLY) {
+      // Months pick the weeks shown in the row below; each opens its newest week
+      const y = state.year, cur = byMonth.get(state.view);
+      for (let mo = 0; mo < 12; mo++) {
+        const ws = M.filter(m => m.year === y && m.mon === mo), last = ws[ws.length - 1];
+        html += last ? `<button type="button" data-v="${last.month}" aria-pressed="${!!cur && cur.year === y && cur.mon === mo}">${MON[mo]}</button>`
+                     : `<button type="button" disabled title="No charts in ${MONTHS[mo]} ${y}">${MON[mo]}</button>`;
+      }
+      html += `<span class="push"></span>`;
+      if (X.yearEnd[y]) html += `<button type="button" class="ye" data-v="year-end" aria-pressed="${state.view === 'year-end'}">${y === LAST.year && isPartial(y) ? 'Year to date' : 'Year-end'}</button>`;
     } else {
       const y = state.year;
       for (let mo = 0; mo < 12; mo++) {
@@ -665,6 +718,24 @@
     el.querySelectorAll('button[data-back]').forEach(b => b.addEventListener('click', () => history.length > 1 ? history.back() : go({ view: 'library', cat: 'albums' })));
     const on = el.querySelector('[aria-pressed="true"]');
     if (on) el.scrollLeft = Math.max(0, on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2);
+    if (WEEKLY) renderWeeks();
+  }
+  // Weekly sites: a second row with the weeks of the chosen month, plus previous / next week
+  function renderWeeks() {
+    let row = $('weeks');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'in weeks'; row.id = 'weeks';
+      $('bar').appendChild(row);
+      row.addEventListener('click', ev => { const b = ev.target.closest('button[data-v]'); if (b) go({ year: byMonth.get(b.dataset.v).year, view: b.dataset.v }); });
+    }
+    const m = isChartView() && byMonth.get(state.view);
+    row.hidden = !m;
+    if (!m) return;
+    const ws = M.filter(x => x.year === m.year && x.mon === m.mon), prev = M[m.i - 1], next = M[m.i + 1];
+    row.innerHTML = `<button type="button" class="step"${prev ? ` data-v="${prev.month}" aria-label="Previous week, ${esc(monthLabel(prev))}"` : ' disabled'}>‹</button>` +
+      ws.map(w => `<button type="button" data-v="${w.month}" aria-pressed="${w === m}" title="${esc(monthLabel(w))}">${dayLabel(w.month, false)}</button>`).join('') +
+      `<button type="button" class="step"${next ? ` data-v="${next.month}" aria-label="Next week, ${esc(monthLabel(next))}"` : ' disabled'}>›</button>`;
   }
   function renderCats() {
     const el = $('cats');
@@ -679,8 +750,23 @@
       $('glanceH').textContent = 'No. 1s, year by year';
       $('glanceHint').textContent = 'Year-end No. 1s. Click a year to open it.';
       el.innerHTML = `<thead><tr><th>Year</th><th>Song</th><th>Album</th><th>Artist</th></tr></thead><tbody>` +
-        allYears.map(y => `<tr tabindex="0" data-y="${y}" data-v="year-end"><td class="mo">${y}${isPartial(y) ? '<span>' + (M.filter(m => m.year === y).length ? M.filter(m => m.year === y).length + ' months' : 'Year total') + '</span>' : ''}</td>` +
+        allYears.map(y => `<tr tabindex="0" data-y="${y}" data-v="year-end"><td class="mo">${y}${isPartial(y) ? '<span>' + (M.filter(m => m.year === y).length ? M.filter(m => m.year === y).length + ' ' + W.many : 'Year total') + '</span>' : ''}</td>` +
           CATS.map(c => `<td>${tcell(X.yearEnd[y][c][0], c)}</td>`).join('') + `</tr>`).join('') + `</tbody>`;
+    } else if (WEEKLY) {
+      const y = state.year, ws = weeksOf(y);
+      $('glanceH').textContent = `No. 1s of ${y}, week by week`;
+      $('glanceHint').textContent = 'Click a week to open its charts.';
+      let body = '';
+      ws.forEach(key => {
+        const m = byMonth.get(key);
+        if (!m) {
+          if (key < FIRST.month || key > LAST.month) return;
+          body += `<tr class="off"><td class="mo off">${dayLabel(key, false)}<span>No data</span></td><td colspan="3"></td></tr>`; return;
+        }
+        body += `<tr tabindex="0" data-y="${y}" data-v="${m.month}"><td class="mo">${dayLabel(m.month, false)}<span>${esc(monthLabel(m).replace(/, \d{4}$/, ''))}</span></td>` +
+          CATS.map(c => `<td>${cell(m.data[c][0], UNIT[c])}</td>`).join('') + `</tr>`;
+      });
+      el.innerHTML = `<thead><tr><th>Week</th><th>Song</th><th>Album</th><th>Artist</th></tr></thead><tbody>${body}</tbody>`;
     } else {
       const y = state.year;
       $('glanceH').textContent = `No. 1s of ${y}, month by month`;
@@ -707,17 +793,25 @@
   function renderNotes() {
     const missing = [];
     for (let i = 1; i < M.length; i++) if (M[i].gapBefore) {
-      for (let k = M[i - 1].year * 12 + M[i - 1].mon + 1; k < M[i].year * 12 + M[i].mon; k++) missing.push(`${MONTHS[k % 12]} ${Math.floor(k / 12)}`);
+      if (WEEKLY) {
+        for (let t = Date.parse(M[i - 1].month + 'T00:00:00Z') + 6048e5; t < Date.parse(M[i].month + 'T00:00:00Z'); t += 6048e5) missing.push('the week of ' + dayLabel(new Date(t).toISOString().slice(0, 10)));
+      } else {
+        for (let k = M[i - 1].year * 12 + M[i - 1].mon + 1; k < M[i].year * 12 + M[i].mon; k++) missing.push(`${MONTHS[k % 12]} ${Math.floor(k / 12)}`);
+      }
     }
+    if (missing.length > 6) missing.splice(5, missing.length - 5, `${missing.length - 5} more`);
     const yeText = C.YEAR_END_METHOD === 'totals'
       ? `<p><b>Year-end charts</b> rank by total plays (songs) or minutes (albums and artists) over the whole year.</p>`
       : `<p><b>Year-end charts</b> use chart points: each monthly position earns points, from ${C.CHART_SIZE} for No. 1 down to 1 for No. ${C.CHART_SIZE}. Ties go to the better peak, then more months at No. 1, then more months on the chart, then the earlier debut.</p>`;
     const atText = C.ALL_TIME_METHOD === 'totals'
       ? `<p><b>All-time</b> ranks by total plays or minutes across everything.</p>`
-      : `<p><b>All-time</b> uses chart points (${C.CHART_SIZE} for a No. 1 down to 1 for No. ${C.CHART_SIZE}), added up across every monthly chart.</p>`;
+      : `<p><b>All-time</b> uses chart points (${C.CHART_SIZE} for a No. 1 down to 1 for No. ${C.CHART_SIZE}), added up across every ${W.ly} chart.</p>`;
     $('notes').innerHTML = `
-      <p><b>Monthly charts.</b> The top ${C.CHART_SIZE} songs, albums and artists of each month. Artists and albums are ranked by minutes listened and songs by plays. The charts run continuously from ${monthLabel(FIRST)}: moves, peaks and months on chart carry over from one year into the next.${missing.length ? ` There is no chart for ${missing.join(', ')}, so the month after compares with the last chart before the gap.` : ''}</p>
-      <p><b>Columns.</b> LM is last month’s position, PEAK is the best position reached so far and MOS is months on the chart. NEW is a first appearance and RE is a return after dropping out. Different editions of the same album count as one.</p>
+      ${WEEKLY
+        ? `<p><b>Weekly charts.</b> The top ${C.CHART_SIZE} songs, albums and artists of each week, counted Friday to Thursday like Billboard’s tracking week. A week belongs to the month its Monday falls in. Artists and albums are ranked by minutes listened and songs by plays. The charts run continuously from ${ofLabel(FIRST)}.${missing.length ? ` There is no chart for ${missing.join(', ')} (too little listening), so the week after compares with the last chart before the gap.` : ''}</p>
+      <p><b>Columns.</b> LW is last week’s position, PEAK is the best position reached so far and WKS is weeks on the chart. NEW is a first appearance and RE is a return after dropping out. Different editions of the same album count as one.</p>`
+        : `<p><b>Monthly charts.</b> The top ${C.CHART_SIZE} songs, albums and artists of each month. Artists and albums are ranked by minutes listened and songs by plays. The charts run continuously from ${monthLabel(FIRST)}: moves, peaks and months on chart carry over from one year into the next.${missing.length ? ` There is no chart for ${missing.join(', ')}, so the month after compares with the last chart before the gap.` : ''}</p>
+      <p><b>Columns.</b> LM is last month’s position, PEAK is the best position reached so far and MOS is months on the chart. NEW is a first appearance and RE is a return after dropping out. Different editions of the same album count as one.</p>`}
       ${yeText}${atText}
       <p><b>Library totals</b> add up every month something shows up in the charts’ underlying lists, so they’re a floor: the real numbers are higher. The library shows the top ${C.LIBRARY_LIMITS.albums} albums, ${C.LIBRARY_LIMITS.artists} artists and ${C.LIBRARY_LIMITS.songs} songs by these totals. Awards and detail pages use the full chart history. Data built ${esc(DB.builtAt || '')}.</p>`;
   }
@@ -769,7 +863,8 @@
     const v = ev.target.value;
     if (v === 'all') return go({ year: 'all', view: 'all-time' });
     const y = +v, wasYE = state.view === 'year-end' || state.view === 'replay';
-    const sameMonth = /^\d{4}-\d{2}$/.test(state.view) ? ym(y, +state.view.slice(5) - 1) : null;
+    const cur = byMonth.get(state.view);
+    const sameMonth = !cur ? null : WEEKLY ? (M.filter(m => m.year === y && m.mon === cur.mon).pop() || {}).month : ym(y, cur.mon);
     go({ year: y, view: wasYE && (state.view === 'year-end' ? X.yearEnd[y] : hasReplay(y)) ? state.view
       : sameMonth && byMonth.has(sameMonth) ? sameMonth : defaultView(y) });
   });

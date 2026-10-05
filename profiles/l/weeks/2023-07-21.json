@@ -1,0 +1,44 @@
+{
+  "week": "2023-07-21",
+  "source": "spotify",
+  "total": {"value": 32, "unit": "min"},
+  "note": "Spotify streaming history: 10 plays of 30s or more, 32 minutes.",
+  "artists": [
+    ["Kanye West",10],
+    ["Nas",8],
+    ["Tyler, The Creator",4],
+    ["2Pac",3],
+    ["KIDS SEE GHOSTS",3],
+    ["50 Cent",2],
+    ["Dfideliz",1],
+    ["Eminem",0],
+    ["21 Savage",0],
+    ["Coast Contra",0]
+  ],
+  "songs": [
+    ["Ultralight Beam","Kanye West",1],
+    ["Represent","Nas",1],
+    ["Memory Lane (Sittin' in da Park)","Nas",1],
+    ["A BOY IS A GUN*","Tyler, The Creator",1],
+    ["To Live & Die In L.A.","2Pac",1],
+    ["Moon","Kanye West",1],
+    ["4th Dimension","KIDS SEE GHOSTS",1],
+    ["All Of The Lights","Kanye West",1],
+    ["P.I.M.P.","50 Cent",1],
+    ["Casaco De Grife","Dfideliz",1]
+  ],
+  "albums": [
+    ["Illmatic","Nas",8],
+    ["The Life Of Pablo","Kanye West",5],
+    ["IGOR","Tyler, The Creator",4],
+    ["Greatest Hits","2Pac",3],
+    ["Donda","Kanye West",3],
+    ["KIDS SEE GHOSTS","KIDS SEE GHOSTS",3],
+    ["My Beautiful Dark Twisted Fantasy","Kanye West",3],
+    ["Get Rich Or Die Tryin'","50 Cent",2],
+    ["Essa Minha Vida Bandida","Dfideliz",1],
+    ["The Marshall Mathers LP","Eminem",0],
+    ["Red Opps","21 Savage",0],
+    ["Never Freestyle","Coast Contra",0]
+  ]
+}
