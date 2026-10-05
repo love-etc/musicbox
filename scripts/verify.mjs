@@ -8,7 +8,9 @@ import { reconstructCollections } from './reconstruct-collections.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Load the two browser scripts the same way the page does
 const window = {};
-new Function('window', readFileSync(join(ROOT, 'site/data.js'), 'utf8'))(window);
+// Checks site/data.js, or another site's data.js: node scripts/verify.mjs site/l
+const SITE = (process.argv[2] || 'site').replace(/\/$/, '');
+new Function('window', readFileSync(join(ROOT, SITE, 'data.js'), 'utf8'))(window);
 new Function('window', 'module', readFileSync(join(ROOT, 'site/charts.js'), 'utf8'))(window, undefined);
 const C = window.Charts;
 const X = C.build(window.MUSICBOX);
@@ -240,5 +242,5 @@ for (const group of window.MUSICBOX.releases?.groups || []) {
   assert.equal(X.T.albums.get(key(group.title))?.total, expected, `${group.title}: preserve all member listening`);
   for (const member of members) if (member !== key(group.title)) assert.ok(!X.T.albums.has(member));
 }
-console.log(bad ? `${bad} problem(s)` : `OK: ${X.M.length} months checked; chart history, awards, calendar streaks, release groups and listening totals verified`);
+console.log(bad ? `${bad} problem(s)` : `OK (${SITE}): ${X.M.length} months checked; chart history, awards, calendar streaks, release groups and listening totals verified`);
 process.exit(bad ? 1 : 0);

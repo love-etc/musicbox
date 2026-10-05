@@ -51,6 +51,7 @@ export function cleanAlbum(a) {
     .replace(/\s*[([]([^)\]]*)[)\]]/g, (m, x) => (KEEP.test(x) || !PACKAGING.test(x)) ? m : '')
     .replace(/\s+-\s+(.*remaster.*|single|ep)$/i, '')
     .replace(/(\s*[-:–]\s*|\s+)((super )?deluxe( edition| version)?|expanded edition|anniversary edition|special edition|bonus track version)$/i, '')
+    .replace(/\s+\d+(st|nd|rd|th)? anniversary( edition| version)?$/i, '')
     .trim();
 }
 

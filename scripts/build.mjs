@@ -1,74 +1,95 @@
 #!/usr/bin/env node
-// Bundles everything in data/ into site/data.js so the site works as plain
-// static files (no server or fetch needed: opening site/index.html works too).
+// Bundles each data folder into a data.js so the site works as plain static files
+// (no server or fetch needed: opening site/index.html works too).
 //
-//   node scripts/build.mjs
+//   node scripts/build.mjs          builds every site
 //
-// data/charts/YYYY-MM.json  one file per month (Apple Music Replay or Last.fm)
-// data/spotify/YYYY-MM.json Spotify months (scripts/import-spotify.mjs); merged with any other source
-// data/deezer/YYYY-MM.json  Deezer months (scripts/import-deezer.mjs); same
-// data/replay/YYYY.json     Apple's own full-year Replay lists
-// data/images.json          [type, title, artist, imageUrl] rows
-// data/aliases.json         renames (e.g. an artist Apple renamed) so histories join up
-// data/tracks.json          which charted songs belong to which charted album
-// data/lengths.json         song lengths in seconds, for album minutes worked out from songs
-// data/releases.json        album groups and excluded single releases
-// data/collection-listening.json  recovered collection minutes from raw history
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+// data/                → site/data.js           (the main site, at the root)
+// profiles/<name>/     → site/<name>/data.js     (another person's site, at /<name>/)
+//                        plus site/<name>/index.html, generated from site/index.html so
+//                        it stays the exact same site (it shares styles.css, charts.js, app.js)
+//
+// Inside a data folder (all optional except the month lists):
+// charts/YYYY-MM.json       one file per month (Apple Music Replay or Last.fm)
+// spotify/YYYY-MM.json      Spotify months (scripts/import-spotify.mjs); merged with any other source
+// deezer/YYYY-MM.json       Deezer months (scripts/import-deezer.mjs); same
+// replay/YYYY.json          Apple's own full-year Replay lists
+// images.json               [type, title, artist, imageUrl] rows
+// aliases.json              renames (e.g. an artist Apple renamed) so histories join up
+// credits.json              verified guest credits missing from imports
+// tracks.json               which charted songs belong to which charted album
+// lengths.json              song lengths in seconds, for album minutes worked out from songs
+// releases.json             album groups and excluded single releases
+// collection-listening.json recovered collection minutes from raw history
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const read = p => JSON.parse(readFileSync(join(ROOT, p), 'utf8'));
-const problems = [];
 
-// Month lists can come from several folders; a month present in more than one is merged
-// (numbers added up) by site/charts.js, e.g. Apple Music + Spotify in the same month.
-const SOURCES = ['data/charts', 'data/deezer', 'data/spotify'];
-const months = SOURCES.filter(d => existsSync(join(ROOT, d))).flatMap(d => readdirSync(join(ROOT, d))
-  .filter(f => /^\d{4}-\d{2}\.json$/.test(f)).sort().map(f => d + '/' + f))
-  .map(path => {
-    const f = path.split('/').pop();
-    const m = read(path);
-    if (m.month !== f.slice(0, 7)) problems.push(`${f}: "month" says ${m.month}`);
-    for (const cat of ['artists', 'songs', 'albums']) {
-      const rows = m[cat] || [];
-      if (!rows.length) problems.push(`${f}: no ${cat}`);
-      const w = cat === 'artists' ? 2 : 3;
-      rows.forEach((r, i) => {
-        if (r.length !== w || typeof r[w - 1] !== 'number') problems.push(`${f}: ${cat} #${i + 1} malformed`);
-        else if (i && r[w - 1] > rows[i - 1][w - 1]) problems.push(`${f}: ${cat} #${i + 1} has more than #${i}`);
-      });
+function buildSite(dataDir, outDir) {
+  const at = p => join(ROOT, dataDir, p);
+  const read = p => JSON.parse(readFileSync(at(p), 'utf8'));
+  const opt = (p, empty) => existsSync(at(p)) ? read(p) : empty;
+  const problems = [];
+
+  // Month lists can come from several folders; a month present in more than one is merged
+  // (numbers added up) by site/charts.js, e.g. Apple Music + Spotify in the same month.
+  const SOURCES = ['charts', 'deezer', 'spotify'];
+  const months = SOURCES.filter(d => existsSync(at(d))).flatMap(d => readdirSync(at(d))
+    .filter(f => /^\d{4}-\d{2}\.json$/.test(f)).sort().map(f => d + '/' + f))
+    .map(path => {
+      const f = path.split('/').pop();
+      const m = read(path);
+      if (m.month !== f.slice(0, 7)) problems.push(`${f}: "month" says ${m.month}`);
+      for (const cat of ['artists', 'songs', 'albums']) {
+        const rows = m[cat] || [];
+        if (!rows.length) problems.push(`${f}: no ${cat}`);
+        const w = cat === 'artists' ? 2 : 3;
+        rows.forEach((r, i) => {
+          if (r.length !== w || typeof r[w - 1] !== 'number') problems.push(`${f}: ${cat} #${i + 1} malformed`);
+          else if (i && r[w - 1] > rows[i - 1][w - 1]) problems.push(`${f}: ${cat} #${i + 1} has more than #${i}`);
+        });
+      }
+      return m;
+    });
+
+  const replay = {};
+  if (existsSync(at('replay'))) {
+    for (const f of readdirSync(at('replay')).filter(f => /^\d{4}\.json$/.test(f))) {
+      const r = read('replay/' + f);
+      replay[f.slice(0, 4)] = { artists: r.artists || [], songs: r.songs || [], albums: r.albums || [] };
     }
-    return m;
-  });
-
-const replay = {};
-if (existsSync(join(ROOT, 'data/replay'))) {
-  for (const f of readdirSync(join(ROOT, 'data/replay')).filter(f => /^\d{4}\.json$/.test(f))) {
-    const r = read('data/replay/' + f);
-    replay[f.slice(0, 4)] = { artists: r.artists || [], songs: r.songs || [], albums: r.albums || [] };
   }
+  const images = opt('images.json', []);
+  const aliases = opt('aliases.json', {});
+  const credits = opt('credits.json', {});
+  const tracks = opt('tracks.json', {});
+  const releases = opt('releases.json', {});
+  const collectionListening = opt('collection-listening.json', {});
+  const lengths = opt('lengths.json', {});
+  for (const o of [tracks, lengths, aliases, credits, releases, collectionListening]) delete o._comment;
+
+  const out = { builtAt: new Date().toISOString().slice(0, 10), months, replay, images, aliases, credits, tracks, releases, collectionListening, lengths };
+  mkdirSync(join(ROOT, outDir), { recursive: true });
+  writeFileSync(join(ROOT, outDir, 'data.js'),
+    `// Generated by scripts/build.mjs from ${dataDir}/. Do not edit by hand.\nwindow.MUSICBOX = ` + JSON.stringify(out) + ';\n');
+
+  problems.forEach(p => console.warn(`warning (${dataDir}):`, p));
+  const ms = [...new Set(months.map(m => m.month))].sort();
+  console.log(`${outDir}/data.js: ${ms.length} months (${ms[0]} to ${ms.at(-1)}) from ${months.length} files, ` +
+    `${Object.keys(replay).length} Replay years, ${images.length} images`);
 }
-const images = existsSync(join(ROOT, 'data/images.json')) ? read('data/images.json') : [];
-const aliases = existsSync(join(ROOT, 'data/aliases.json')) ? read('data/aliases.json') : {};
-const credits = existsSync(join(ROOT, 'data/credits.json')) ? read('data/credits.json') : {};
-const tracks = existsSync(join(ROOT, 'data/tracks.json')) ? read('data/tracks.json') : {};
-const releases = existsSync(join(ROOT, 'data/releases.json')) ? read('data/releases.json') : {};
-const collectionListening = existsSync(join(ROOT, 'data/collection-listening.json')) ? read('data/collection-listening.json') : {};
-const lengths = existsSync(join(ROOT, 'data/lengths.json')) ? read('data/lengths.json') : {};
-delete tracks._comment;
-delete lengths._comment;
-delete aliases._comment;
-delete credits._comment;
-delete releases._comment;
-delete collectionListening._comment;
 
-const out = { builtAt: new Date().toISOString().slice(0, 10), months, replay, images, aliases, credits, tracks, releases, collectionListening, lengths };
-writeFileSync(join(ROOT, 'site/data.js'),
-  '// Generated by scripts/build.mjs from data/. Do not edit by hand.\nwindow.MUSICBOX = ' + JSON.stringify(out) + ';\n');
+buildSite('data', 'site');
 
-problems.forEach(p => console.warn('warning:', p));
-const ms = [...new Set(months.map(m => m.month))].sort();
-console.log(`site/data.js: ${ms.length} months (${ms[0]} to ${ms.at(-1)}) from ${months.length} files, ` +
-  `${Object.keys(replay).length} Replay years, ${images.length} images`);
+// Other people's sites: same page, shared code one folder up, their own data.js
+const profiles = existsSync(join(ROOT, 'profiles'))
+  ? readdirSync(join(ROOT, 'profiles')).filter(d => statSync(join(ROOT, 'profiles', d)).isDirectory()) : [];
+const page = readFileSync(join(ROOT, 'site/index.html'), 'utf8')
+  .replace(/(href|src)="(styles\.css|favicon\.svg|charts\.js|app\.js)"/g, '$1="../$2"');
+for (const name of profiles) {
+  buildSite('profiles/' + name, 'site/' + name);
+  writeFileSync(join(ROOT, 'site', name, 'index.html'),
+    `<!-- Generated by scripts/build.mjs from site/index.html. Do not edit by hand. -->\n` + page);
+}

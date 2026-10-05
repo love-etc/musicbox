@@ -1,11 +1,11 @@
 {
   "name": "musicbox",
   "private": true,
-  "description": "musicbox: monthly music charts built from Apple Music Replay and Last.fm",
+  "description": "musicbox: monthly music charts built from Apple Music Replay, Spotify, Deezer and Last.fm",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "verify": "node scripts/verify.mjs",
+    "verify": "node scripts/verify.mjs && for d in site/*/; do node scripts/verify.mjs \"$d\"; done",
     "serve": "python3 -m http.server 8000 --directory site"
   }
 }

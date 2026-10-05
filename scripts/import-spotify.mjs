@@ -2,6 +2,7 @@
 // Turns Spotify "Extended Streaming History" exports into monthly lists in data/spotify/.
 //
 //   node scripts/import-spotify.mjs "spotify data" 2018-11:2021-04 2026-01:2026-03
+//   node scripts/import-spotify.mjs p2 2022-05:2026-09 --out=profiles/l/spotify
 //
 // - Reads every Streaming_History_Audio_*.json under the given folder (any number of
 //   accounts), drops exact duplicates, and buckets streams by month in São Paulo time.
@@ -18,7 +19,10 @@ import { fileURLToPath } from 'node:url';
 import { monthRange, findFiles, writeMonths } from './lib/history.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const [src = 'spotify data', ...ranges] = process.argv.slice(2);
+const args = process.argv.slice(2);
+// --out=<folder> writes somewhere else, e.g. --out=profiles/l/spotify for another person's site
+const OUT = (args.find(a => a.startsWith('--out=')) || '--out=data/spotify').slice(6);
+const [src = 'spotify data', ...ranges] = args.filter(a => !a.startsWith('--out='));
 const months = monthRange(ranges.length ? ranges : ['2018-11:2021-04']);
 const files = findFiles(join(ROOT, src), /^Streaming_History_Audio_.*\.json$/);
 
@@ -33,5 +37,5 @@ for (const f of files) {
       album: r.master_metadata_album_album_name, ms: r.ms_played });
   }
 }
-const kept = writeMonths(streams, { root: ROOT, outDir: 'data/spotify', source: 'spotify', label: 'Spotify', months });
+const kept = writeMonths(streams, { root: ROOT, outDir: OUT, source: 'spotify', label: 'Spotify', months });
 console.log(`${files.length} files, ${streams.length} track streams, ${kept} in the requested months`);

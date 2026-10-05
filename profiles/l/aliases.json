@@ -1,0 +1,13 @@
+{
+  "_comment": "Old name -> current name, so chart histories join up. Songs/albums: \"Old title — Old artist\": \"New title — New artist\".",
+  "artists": {
+    "Clipsee": "Clipse"
+  },
+  "songs": {
+    "CARNIVAL — Kanye West": "CARNIVAL — ¥$"
+  },
+  "albums": {
+    "VULTURES 1 — Kanye West": "VULTURES 1 — ¥$",
+    "MUSIC - SORRY 4 DA WAIT — Playboi Carti": "MUSIC — Playboi Carti"
+  }
+}
